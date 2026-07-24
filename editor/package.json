@@ -1,0 +1,17 @@
+{
+  "name": "ps2d-pipeline",
+  "version": "1.0.0",
+  "description": "PS1 racer + Scene Forge asset pipeline",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "puppeteer-core": "^25.3.0",
+    "three": "^0.160.0"
+  },
+  "private": true
+}

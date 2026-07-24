@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Placeholder GP — Track Preview</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #0b0e14; }
+  canvas { display: block; }
+  #info {
+    position: fixed; left: 10px; top: 10px; z-index: 10; padding: 6px 10px;
+    font: 12px/1.5 system-ui, sans-serif; color: #cfd6e4;
+    background: rgba(10, 12, 18, 0.82); border-radius: 8px; white-space: pre;
+  }
+  #err { color: #ff8080; }
+</style>
+</head>
+<body>
+<div id="info">loading…</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+// =====================================================================
+// Headless-friendly track viewer for the asset pipeline (tools/screenshot.js).
+// Builds a track with the SAME calls the editor and the race use
+// (buildTrack / applyTheme / buildEnvironment / buildAllTrackObjects) and
+// frames it from URL params — no UI, no game loop, camera fully scriptable.
+//
+//   ?track=<id>        track/level id (default: first built-in)
+//   Camera, one of:
+//     (nothing)        overhead framing of the whole track
+//     ?cam=x,y,z&look=x,y,z            absolute placement
+//     ?s=<0..1|meters>&lat=<m>&h=<m>   on-track placement at arc position s,
+//        &ahead=<m>                    looking down-road `ahead` meters (default 25)
+//   ?orbit=1           OrbitControls for interactive use
+//
+// Sets window.__READY = true once the first frame after build has rendered —
+// screenshot.js polls this instead of guessing a wait time.
+// =====================================================================
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CONFIG } from "../shared/src/config.js";
+import { TRACKS } from "../game/src/tracks.js";
+import { loadLevels } from "../game/src/levels.js";
+import { buildTrack } from "../shared/src/track.js";
+import { buildEnvironment, applyTheme, mulberry32, hashSeed } from "../shared/src/environment.js";
+import { buildAllTrackObjects, defaultBands } from "../shared/src/trackObjects.js";
+import { preloadAssets, updateCrowdBillboard } from "../shared/src/placeholders.js";
+
+const q = new URLSearchParams(location.search);
+const info = document.getElementById("info");
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
+const hemi = new THREE.HemisphereLight(0xffffff, 0x445533, 0.9);
+const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
+sun.position.set(30, 45, -20);
+scene.add(hemi, sun, sun.target);
+
+let billboards = [];
+let controls = null;
+
+function fail(msg) {
+  info.innerHTML = `<span id="err">${msg}</span>`;
+  window.__READY = "error: " + msg;
+}
+
+async function init() {
+  try {
+    await preloadAssets();
+  } catch (err) {
+    console.warn("Asset preload failed (non-fatal):", err);
+  }
+  const levels = await loadLevels();
+  const all = [...TRACKS, ...levels];
+  const id = q.get("track") ?? all[0].id;
+  const def = all.find((t) => t.id === id);
+  if (!def) return fail(`no track "${id}" — have: ${all.map((t) => t.id).join(", ")}`);
+
+  const track = buildTrack(def);
+  scene.add(track.group);
+  applyTheme(def.theme, scene, sun, hemi);
+  if (!def.trackObjects) def.trackObjects = { bands: defaultBands(track), points: [] };
+  def.trackObjects.points ??= [];
+  def.trackObjects.bands ??= [];
+  const rng = mulberry32(hashSeed(def.id || "untitled"));
+  scene.add(buildEnvironment(def, track, rng));
+  const objs = buildAllTrackObjects(def, track, rng);
+  scene.add(objs.group);
+  billboards = objs.billboards;
+
+  placeCamera(track);
+  if (q.get("orbit")) {
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.copy(lookTarget);
+  }
+  info.textContent = `${def.name ?? def.id} — ${track.length.toFixed(0)} m`;
+
+  let frames = 0;
+  renderer.setAnimationLoop(() => {
+    const now = performance.now();
+    controls?.update();
+    for (const b of billboards) {
+      if (b.userData.noFace) continue;
+      b.rotation.y = Math.atan2(camera.position.x - b.position.x, camera.position.z - b.position.z);
+      updateCrowdBillboard(b, now, camera.position);
+    }
+    renderer.render(scene, camera);
+    if (++frames === 2) window.__READY = true; // frame 1 warms shaders, frame 2 is the real image
+  });
+}
+
+const lookTarget = new THREE.Vector3();
+function placeCamera(track) {
+  const nums = (key) => q.get(key)?.split(",").map(Number);
+  const cam = nums("cam"), look = nums("look");
+  if (cam?.length === 3) {
+    camera.position.set(...cam);
+    lookTarget.set(...(look?.length === 3 ? look : [0, 0, 0]));
+  } else if (q.has("s")) {
+    // on-track: s as a 0..1 lap fraction (values > 1.5 are taken as meters)
+    let s = Number(q.get("s")) || 0;
+    if (Math.abs(s) <= 1.5) s *= track.length;
+    const lat = Number(q.get("lat")) || 0;
+    const h = q.has("h") ? Number(q.get("h")) : 3;
+    const ahead = q.has("ahead") ? Number(q.get("ahead")) : 25;
+    track.posAt(s, lat, camera.position);
+    camera.position.y += h;
+    track.posAt(s + ahead, 0, lookTarget);
+    lookTarget.y += 1;
+  } else {
+    // whole-track overhead framing
+    const box = new THREE.Box3().setFromObject(track.group);
+    const c = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const span = Math.max(size.x, size.z);
+    camera.position.set(c.x + span * 0.35, span * 0.9, c.z + span * 0.55);
+    lookTarget.copy(c);
+  }
+  camera.lookAt(lookTarget);
+}
+
+window.addEventListener("resize", () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+init().catch((e) => fail(e.message));
+</script>
+</body>
+</html>

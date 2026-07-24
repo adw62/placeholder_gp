@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Placeholder GP — Car Viewer</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #0b0e14; }
+  canvas { display: block; }
+  #info {
+    position: fixed; left: 10px; top: 10px; z-index: 10; padding: 6px 10px;
+    font: 12px/1.5 system-ui, sans-serif; color: #cfd6e4;
+    background: rgba(10, 12, 18, 0.82); border-radius: 8px; white-space: pre;
+  }
+  #err { color: #ff8080; }
+</style>
+</head>
+<body>
+<div id="info">loading…</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+// =====================================================================
+// Car inspection page for the asset pipeline (tools/screenshot.js).
+// Shows a car exactly as the game rigs it — buildPlayerCar with the real
+// WHEEL placement/carScale — over a 1 m reference grid, with its bounding
+// box printed so a generated model's scale/orientation can be verified
+// against the "+Z forward, ~1.4 m kart" convention numerically, not by eye.
+//
+//   ?car=<id>     ASSETS.carModels entry (default: first)
+//   ?url=<path>   any .gltf/.glb instead — raw, un-rigged (pre-registration
+//                 check of a fresh export; no wheels are added)
+//   ?yaw=<deg>&pitch=<deg>&dist=<m>   camera orbit (default 35 / 18 / 4.5×radius)
+//   ?spin=1       turntable for interactive viewing
+//
+// Sets window.__READY like preview.html.
+// =====================================================================
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CONFIG } from "../shared/src/config.js";
+import { preloadAssets, buildPlayerCar, loadGLTF, ASSETS } from "../shared/src/placeholders.js";
+
+const q = new URLSearchParams(location.search);
+const info = document.getElementById("info");
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a2030);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.05, 200);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445533, 0.9));
+const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
+sun.position.set(6, 9, -4);
+sun.castShadow = true;
+scene.add(sun);
+// camera-following fill ("headlamp") — the sun is near-overhead, which
+// leaves vertical panels (car sides!) too dim to inspect; a fixed fill
+// would only ever help one side, so it tracks the eye in the render loop
+const fill = new THREE.DirectionalLight(0xdfe8ff, 0.6);
+scene.add(fill);
+
+// ground + 1 m grid + forward (+Z) arrow
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshStandardMaterial({ color: 0x2a3142, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+scene.add(new THREE.GridHelper(40, 40, 0x55617a, 0x39415a));
+scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.02, 0), 2, 0x66ff88, 0.35, 0.18));
+
+function fail(msg) {
+  info.innerHTML = `<span id="err">${msg}</span>`;
+  window.__READY = "error: " + msg;
+}
+
+async function init() {
+  let subject, label;
+  if (q.get("url")) {
+    subject = await loadGLTF(q.get("url"));
+    // same material normalization buildPlayerCar applies to every car —
+    // GLTFExporter writes metallicFactor 0.5 (dark without an envmap), and
+    // the game always overrides it, so showing the raw value would misread
+    subject.traverse((o) => {
+      if (o.isMesh && o.material) { o.material.roughness = 0.85; o.material.metalness = 0.1; }
+    });
+    label = q.get("url") + " (un-rigged, game material settings)";
+  } else {
+    await preloadAssets();
+    const id = q.get("car") ?? ASSETS.carModels[0]?.id;
+    if (!ASSETS.carModels.find((c) => c.id === id))
+      return fail(`no car "${id}" — have: ${ASSETS.carModels.map((c) => c.id).join(", ")}`);
+    let lift;
+    ({ group: subject, lift } = await buildPlayerCar(id));
+    subject.position.y = lift; // same ground-seating main.js applies — without it the wheels sit below the floor plane
+    label = `${id} (game rig, carScale ${CONFIG.carScale})`;
+  }
+  subject.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(subject);
+  window.__subject = subject; // headless-inspection handle
+
+  const box = new THREE.Box3().setFromObject(subject);
+  const size = box.getSize(new THREE.Vector3());
+  const c = box.getCenter(new THREE.Vector3());
+  info.textContent =
+    `${label}\n` +
+    `size  ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} m (W×H×L)\n` +
+    `bounds y [${box.min.y.toFixed(2)}, ${box.max.y.toFixed(2)}]  z [${box.min.z.toFixed(2)}, ${box.max.z.toFixed(2)}]`;
+
+  const radius = Math.max(size.x, size.y, size.z);
+  const dist = q.has("dist") ? Number(q.get("dist")) : radius * 2.2;
+  let yaw = THREE.MathUtils.degToRad(q.has("yaw") ? Number(q.get("yaw")) : 35);
+  const pitch = THREE.MathUtils.degToRad(q.has("pitch") ? Number(q.get("pitch")) : 18);
+  const target = new THREE.Vector3(c.x, c.y, c.z);
+
+  const place = () => {
+    camera.position.set(
+      target.x + dist * Math.cos(pitch) * Math.sin(yaw),
+      target.y + dist * Math.sin(pitch),
+      target.z + dist * Math.cos(pitch) * Math.cos(yaw)
+    );
+    camera.lookAt(target);
+  };
+  place();
+
+  let controls = null;
+  if (q.get("spin") !== "1" && !q.get("static")) {
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.copy(target);
+  }
+
+  let frames = 0;
+  renderer.setAnimationLoop(() => {
+    if (q.get("spin") === "1") { yaw += 0.01; place(); }
+    controls?.update();
+    fill.position.copy(camera.position);
+    renderer.render(scene, camera);
+    if (++frames === 2) window.__READY = true;
+  });
+}
+
+window.addEventListener("resize", () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+init().catch((e) => fail(e.message));
+</script>
+</body>
+</html>

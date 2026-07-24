@@ -1,0 +1,3051 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PS1 Scene Forge — V2 (face-first atlas)</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; font: 13px/1.4 system-ui, sans-serif; background: #14161a; color: #d7dbe0; display: flex; flex-direction: column; overflow: hidden; }
+  h1 { font-size: 15px; margin: 0; padding: 9px 14px; background: #1c1f26; border-bottom: 1px solid #2a2f38; letter-spacing: .3px; }
+  h1 small { color: #6f7885; font-weight: 400; }
+
+  .bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 8px 14px; background: #1c1f26; border-bottom: 1px solid #2a2f38; }
+  .bar .grp { display: flex; align-items: center; gap: 7px; }
+  .bar label { color: #9aa3af; }
+
+  .seg { display: inline-flex; border: 1px solid #333a45; border-radius: 6px; overflow: hidden; }
+  .seg button { background: #1c1f26; color: #aeb6c1; border: 0; padding: 5px 10px; cursor: pointer; font: inherit; }
+  .seg button.on { background: #3a6df0; color: #fff; }
+  .seg button:hover:not(.on) { background: #242936; }
+
+  .grid { display: grid; grid-template-columns: 1fr 6px var(--panel-w, 480px); flex: 1; min-height: 0; }
+  .panel { padding: 12px; overflow: auto; border-left: 1px solid #2a2f38; }
+  .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: #7f8894; margin: 14px 0 8px; }
+  .panel h2:first-child { margin-top: 0; }
+  #panelResizer { cursor: col-resize; background: #1c1f26; position: relative; }
+  #panelResizer::after { content: ''; position: absolute; inset: 0 -3px; }
+  #panelResizer:hover, #panelResizer.dragging { background: #3a6df0; }
+
+  #view { width: 100%; height: 100%; background: #0c0d10; display: block; }
+  #viewWrap { height: 100%; position: relative; }
+  #viewHint { position: absolute; left: 10px; bottom: 8px; color: #5c6470; font-size: 11px; pointer-events: none; z-index: 6; }
+  #modeBar { position: absolute; top: 8px; left: 8px; display: flex; gap: 6px; align-items: center; z-index: 5; }
+  #modeBar > button { background: rgba(28,31,38,.85); border: 1px solid #333a45; color: #aeb6c1; border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; }
+  #modeBar > button.on { background: #3a6df0; border-color: #3a6df0; color: #fff; }
+  #fitBtn { background: rgba(42,125,70,.9) !important; border-color: #2a7d46 !important; color: #fff !important; }
+  #smoothBtn { background: rgba(42,90,150,.9) !important; border-color: #2a5a96 !important; color: #fff !important; }
+  #profOv { position: absolute; inset: 0; cursor: crosshair; z-index: 4; }
+  #lassoOv { position: absolute; inset: 0; cursor: crosshair; z-index: 4; }
+  #boxSel { position: absolute; border: 1px solid #ffb026; background: rgba(255,176,38,.15); pointer-events: none; z-index: 7; }
+
+  canvas.pix { image-rendering: pixelated; }
+  #atlas { width: 100%; background: #0c0d10; border-radius: 6px; cursor: pointer; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 7px 0; flex-wrap: wrap; }
+  label.f { min-width: 58px; color: #9aa3af; }
+  input[type=range] { flex: 1; }
+  .val { min-width: 28px; text-align: right; color: #cbd2da; }
+  input[type=range].mini { flex: 0 0 84px; }
+  button.act { background: #3a6df0; color: #fff; border: 0; border-radius: 6px; padding: 7px 12px; cursor: pointer; font: inherit; }
+  button.act.green { background: #2a7d46; }
+  button.act.sec { background: #1c1f26; border: 1px solid #333a45; color: #aeb6c1; padding: 5px 10px; }
+  button.act.sec.on { background: #3a6df0; border-color: #3a6df0; color: #fff; }
+  button.act:hover { filter: brightness(1.12); }
+  button.act:disabled { opacity: .4; cursor: default; filter: none; }
+  #decApply.pending { background: #d97a1a; }
+  .axis { color: #5c6470; font-size: 11px; }
+  .hint { color: #6f7885; font-size: 11px; margin: 6px 0; }
+  #selName { color: #ffe14d; font-weight: 600; }
+  #photoWrap { position: relative; margin-top: 6px; width: 100%; }
+  #photo { background: #0c0d10; border-radius: 6px; display: block; width: 100%; height: auto; }
+  #photoOv { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+  #flatCol { width: 40px; height: 26px; padding: 0; border: 1px solid #444; border-radius: 5px; background: none; cursor: pointer; }
+  input[type=file] { font-size: 12px; max-width: 100%; }
+  .muted { color: #5c6470; }
+</style>
+
+<h1>PS1 Scene Forge <small>— V3 · block out a scene from primitives, profiles &amp; decimated models → one atlas → grab faces from photos → .gltf</small></h1>
+
+<div class="bar">
+  <div class="grp"><label>Add</label>
+    <span class="seg" id="addSeg">
+      <button data-p="panel">Panel</button>
+      <button data-p="cube">Cube</button>
+      <button data-p="prism">Prism</button>
+      <button data-p="pyramid">Pyramid</button>
+    </span>
+    <label class="muted">Sides</label>
+    <input type="range" id="sides" class="mini" min="3" max="12" value="6" style="flex:0 0 70px"><span class="val" id="sidesV">6</span>
+  </div>
+  <div class="grp"><label>Reference</label>
+    <button class="act sec" id="loadObjBtn" title="Load a .obj, .gltf or .glb as the decimation reference (ghosted, fit-to-ghost target) — not editable faces/fills, same as .obj already worked">Load ref…</button>
+    <button class="act sec" id="ghostBtn" hidden title="Show/hide the reference model">👁 Ghost</button>
+    <input type="file" id="objFile" accept=".obj,.gltf,.glb" hidden>
+  </div>
+  <div class="grp"><label>Car</label>
+    <button class="act sec" id="carGenBtn" title="Trace the active photo (a studio-style side profile) and loft a car body from it — same pipeline as tools/build-car.js. Replaces the scene (undoable); tweak the mesh with the normal tools afterwards.">🚗 From photo</button>
+    <button class="act sec" id="carTexBtn" title="Paint a GT1-style livery for the CURRENT body mesh (works after vert tweaks) and wire every face as an editable photo grab — then restyle faces, re-grab from real photos, or draw regions on top as usual. Undoable; re-run any time with new colors.">🎨 Auto livery</button>
+  </div>
+  <div class="grp"><label>Scale</label>
+    <span class="axis">X</span><input type="range" id="sx" class="mini" min="0.2" max="3" step="0.05" value="1">
+    <span class="axis">Y</span><input type="range" id="sy" class="mini" min="0.2" max="3" step="0.05" value="1">
+    <span class="axis">Z</span><input type="range" id="sz" class="mini" min="0.2" max="3" step="0.05" value="1">
+  </div>
+  <div class="grp" style="margin-left:auto">
+    <button class="act sec" id="undoBtn" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+    <button class="act sec" id="redoBtn" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷ Redo</button>
+  </div>
+  <div class="grp">
+    <button class="act sec" id="saveProj" title="Save the whole editable project — objects, fills, photos, symmetry, locks — as a .forge.json (unlike Export, this reloads for further editing)">💾 Save</button>
+    <button class="act sec" id="loadProj" title="Load a .forge.json project (replaces the current scene — undoable). Also accepts drag-and-drop and ?project=<url>">📂 Load</button>
+    <input type="file" id="projFile" accept=".json,application/json" hidden>
+    <button class="act green" id="export">Export .gltf</button>
+  </div>
+</div>
+
+<div class="bar" id="decBar" hidden>
+  <div class="grp"><label>Decimation — target</label>
+    <input type="range" id="decTarget" min="0" max="100" value="50" style="flex:0 0 140px" title="Triangle budget for the decimated model (log scale)"><span class="val" id="decTargetV" style="min-width:70px">—</span>
+    <span class="hint" style="margin:0" id="decEst"></span>
+  </div>
+  <div class="grp"><label>Merge regions within</label>
+    <input type="range" id="decAngle" class="mini" min="1" max="80" value="25" title="Adjacent triangles within this angle become one texture region"><span class="val" id="decAngleV">25°</span>
+  </div>
+  <div class="grp"><label>Absorb under</label>
+    <input type="range" id="decAbsorb" class="mini" min="0" max="100" value="50" title="Regions smaller than this share of the surface area merge into the neighbour they touch most"><span class="val" id="decAbsorbV">—</span>
+  </div>
+  <div class="grp"><button class="act" id="decApply" title="Re-run decimation + region grouping — face fills reset">Decimate</button></div>
+  <span class="hint" id="decStats" style="margin-left:auto"></span>
+</div>
+
+<div class="grid">
+  <div id="viewWrap">
+    <canvas id="view"></canvas>
+    <div id="modeBar">
+      <button data-m="select" class="on">Select</button>
+      <button data-m="move">Move</button>
+      <button data-m="tris">✎ Tris</button>
+      <button data-m="verts">● Verts</button>
+      <button data-m="profile">✏ Profile</button>
+      <button data-m="lasso" title="Click out a shape over the model as currently viewed — paints a new fillable region on whichever face it lands on, no geometry cut">🖌 Draw region</button>
+      <span class="seg" id="tcMode" hidden>
+        <button data-t="translate" class="on">Move</button>
+        <button data-t="rotate">Rotate</button>
+        <button data-t="scale">Scale</button>
+      </span>
+      <button id="addVertBtn" hidden title="Insert a vertex on a clicked edge">＋ Add vert</button>
+      <button id="vertSelBtn" hidden title="Click vertices, or drag a box over empty space to select many at once — then Merge or Delete them">⬚ Select verts</button>
+      <button id="mergeSelBtn" hidden title="Weld the selected vertices into one at their average position (or press Enter)">⛓ Merge</button>
+      <button id="deleteSelBtn" hidden title="Delete the selected vertices and every triangle touching them (or press Delete/Backspace)">🗑 Delete verts</button>
+      <button id="subdivBtn" hidden title="Insert a new ring of vertices at the midpoint of the profile's extrusion axis — click again to halve it again">⊞ Subdivide</button>
+      <span class="seg" id="symSeg" hidden title="Declare mirror planes — paired vertices stay mirrored through drags and fits">
+        <button data-a="0">⇋X</button><button data-a="1">⇋Y</button><button data-a="2">⇋Z</button>
+      </span>
+      <button id="lockAllBtn" hidden title="Lock every vertex of the selected object — verts added afterward (Add vert / Subdivide) start unlocked until you press this again">🔒 Lock all</button>
+      <button id="fitBtn" hidden title="Slide the free (unlocked) vertices along their normals onto the reference surface">▶ Fit to ghost</button>
+      <button id="smoothBtn" hidden title="Relax the free (unlocked) vertices toward their neighbours' average position — no reference needed">〜 Smooth</button>
+    </div>
+    <canvas id="profOv" hidden></canvas>
+    <canvas id="lassoOv" hidden></canvas>
+    <div id="boxSel" hidden></div>
+    <div id="viewHint">Hover a face to preview · click to select · drag to orbit · scroll to zoom · drop a .obj/.gltf/.glb or image anywhere</div>
+  </div>
+
+  <div id="panelResizer" title="Drag to resize"></div>
+
+  <div class="panel">
+    <h2>Net / atlas</h2>
+    <div class="hint">One cell per face. Click a cell (or a face on the model) to select it — a dashed outline marks a painted region within its parent's cell.</div>
+    <canvas id="atlas" class="pix" width="512" height="512"></canvas>
+
+    <h2>Fill face — <span id="selName">none selected</span></h2>
+    <div class="row">
+      <button class="act sec" id="newFaceBtn" title="Start a new face from triangles you click">＋ New face</button>
+      <button class="act sec" id="subFaceBtn" title="Split the selected face — click again to keep halving">⊟ Subdivide face</button>
+      <span class="seg" id="subFaceMode" title="Grid: an evenly-spaced NxN mesh, quad faces only (falls back to Strip on other shapes). Strip: an evenly-spaced loft between the two farthest-apart boundary points — smoother than Wheel on an elongated N-gon like a hand-drawn profile cap. Wheel: N triangles fanning from one center point — a starburst on anything elongated, works on any face">
+        <button data-m="grid" class="on">Grid</button><button data-m="strip">Strip</button><button data-m="wheel">Wheel</button>
+      </span>
+      <button class="act sec" id="flattenBtn" title="Project every vertex of this face onto its own best-fit plane — flattens any bulge left by Fit/Smooth/dragging. Vertices shared with neighbouring faces move too, so a seam can go non-planar on the other side">⊡ Flatten face</button>
+      <button class="act sec" id="delObjBtn" title="Delete the selected face's object">🗑 Delete object</button>
+      <button class="act sec" id="delRegionBtn" hidden title="Remove this painted region — the face underneath is unaffected">🗑 Delete region</button>
+    </div>
+    <div class="row" id="panelKindRow" hidden title="Which livery panel this face is — auto-detected from its name (Hood/Windshield/Roof/Rear Glass/Deck/Nose/Tail/Floor), override for a face named something else. Only matters for 🎨 Auto livery; re-run it after changing this.">
+      <label class="f">Panel kind</label>
+      <select id="panelKind">
+        <option value="">Auto (none detected)</option>
+        <option value="hood">Hood</option>
+        <option value="windshield">Windshield</option>
+        <option value="roof">Roof</option>
+        <option value="rearglass">Rear Glass</option>
+        <option value="deck">Deck</option>
+        <option value="nose">Nose</option>
+        <option value="tail">Tail</option>
+        <option value="floor">Floor</option>
+      </select>
+    </div>
+    <div class="row">
+      <span class="seg" id="fillType">
+        <button data-t="flat">Flat color</button>
+        <button data-t="photo">From photo</button>
+      </span>
+    </div>
+    <div class="row" id="flatRow" hidden>
+      <label class="f">Color</label><input type="color" id="flatCol" value="#8899aa">
+    </div>
+
+    <div id="photoBlock" hidden>
+      <div class="row"><label class="f">Photo</label>
+        <button class="act sec" id="photoBtn">Load photo…</button>
+        <input type="file" id="file" accept="image/*" hidden>
+      </div>
+      <h2>Stylize — this face</h2>
+      <div class="row"><label class="f">Detail</label>
+        <input type="range" id="styRes" min="0" max="100" value="38" title="Grab resolution — 8px chunks up to the cell's native resolution"><span class="val" style="min-width:44px" id="styResV">64px</span>
+      </div>
+      <div class="row"><label class="f">Colors</label>
+        <input type="range" id="styColors" min="2" max="64" value="16"><span class="val" id="styColorsV">16</span>
+      </div>
+      <div class="row"><label class="f">Dither</label>
+        <input type="checkbox" id="styDither">
+        <input type="range" id="styAmt" class="mini" min="0" max="1" step="0.05" value="0.6">
+      </div>
+      <div class="row"><label class="f">Orient</label>
+        <button class="act sec" id="rotBtn">↻ Rotate</button>
+        <button class="act sec" id="flipBtn">⇋ Flip</button>
+      </div>
+      <div class="hint">Drag a numbered handle to adjust one corner (for perspective) · drag inside the shape to move it as one piece · drag the blue diamond to rotate/scale it rigidly, no skew · scroll to zoom · drag empty space to pan.</div>
+      <div class="row">
+        <button class="act sec" id="photoZoomOut" title="Zoom out">−</button>
+        <span class="val" id="photoZoomV" style="min-width:44px">100%</span>
+        <button class="act sec" id="photoZoomIn" title="Zoom in">＋</button>
+        <button class="act sec" id="photoZoomReset" title="Reset zoom/pan">⛶ Fit</button>
+      </div>
+      <div id="photoWrap">
+        <canvas id="photo"></canvas>
+        <canvas id="photoOv"></canvas>
+      </div>
+      <div class="hint muted" id="noPhoto">Load a photo to grab from.</div>
+    </div>
+  </div>
+</div>
+
+<dialog id="carGenDlg" style="background:#1a1d24;color:#dde;border:1px solid #333a46;border-radius:8px;padding:14px 16px;min-width:260px">
+  <form method="dialog" style="display:flex;flex-direction:column;gap:8px">
+    <b>🚗 Car from photo</b>
+    <label>Facing <select id="cgFacing"><option value="left" selected>left</option><option value="right">right</option></select></label>
+    <label>Length (m) <input id="cgLength" type="number" step="0.1" value="2.4" style="width:60px"></label>
+    <label>Width (m) <input id="cgWidth" type="number" step="0.01" placeholder="auto" style="width:60px"></label>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button value="cancel" class="act sec">Cancel</button>
+      <button value="ok" class="act green">Generate</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="carLiveryDlg" style="background:#1a1d24;color:#dde;border:1px solid #333a46;border-radius:8px;padding:14px 16px;min-width:280px">
+  <form method="dialog" style="display:flex;flex-direction:column;gap:8px">
+    <b>🎨 Auto livery</b>
+    <div style="display:flex;gap:10px">
+      <label>Body <input id="clBody" type="color" value="#dfe3ea"></label>
+      <label>Lower <input id="clStripe" type="color" value="#b02030"></label>
+      <label>Accent <input id="clAccent" type="color" value="#1a2a6e"></label>
+      <label>Glass <input id="clGlass" type="color" value="#141a24"></label>
+    </div>
+    <label>Number <input id="clNumber" type="number" min="1" max="99" value="5" style="width:56px"></label>
+    <label>Team <input id="clTeam" value="PLACEHOLDER GP" style="width:170px"></label>
+    <label>Badge <input id="clBadge" value="PGP" style="width:80px"></label>
+    <label>Sponsors <input id="clSponsors" value="TIRE CO., HUBWORKS, PACER BRAKES" style="width:230px" title="comma-separated: front panel, rear panel, rocker"></label>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button value="cancel" class="act sec">Cancel</button>
+      <button value="ok" class="act green">Paint</button>
+    </div>
+  </form>
+</dialog>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+import { MeshoptSimplifier } from 'https://unpkg.com/meshoptimizer@0.22.0/meshopt_simplifier.module.js';
+import { parseWheel as carParseWheel, loftKit, deriveGeom, wireLivery, paintLivery, paintPanel, resolveFaceKind, inferFaceKind, tracePhoto, kitFromTrace }
+  from '../tools/lib/carlib.js';
+
+// ------------------------------------------------------------------ state
+const state = {
+  sides: 6, scale: [1,1,1],
+  verts: [],                           // shared vertex pool — every object's faces index into it
+  objects: [],                         // [{name:'Cube 1', kind, faces:[{name:'Cube 1 · Front +Z', ring, tris}]}]
+  photo: null,                         // HTMLCanvasElement source image
+  model: null, atlas: null,            // merged scene model + computed atlas layout
+  fills: {},                           // faceName -> {type:'flat',color} | {type:'photo', src:[{x,y}..]}
+  selFace: null,
+  sty: { size: 64, colors: 16, dither: false, ditherAmt: 0.6 },
+  mode: 'select',                      // select | move | tris | verts | profile
+  sym: { x:false, y:false, z:false },  // declared mirror planes (world x=0 / y=0 / z=0)
+  editMode: false,                     // triangle-editing mode for the selected face
+  source: null,                        // loaded reference model {pos:Float32Array, index:Uint32Array}
+  decimate: { target: 1500, angle: 25, absorb: 50 },  // tri budget; merge angle (deg); small-region absorb (log slider)
+  decStats: null,                      // {src, tris, regions} of the last decimate
+};
+const grabCache = {};                  // faceName -> warped+stylized cell canvas
+
+// ------------------------------------------------------------------ shape models
+function fanTris(ring){ const t=[]; for(let i=1;i<ring.length-1;i++) t.push([ring[0],ring[i],ring[i+1]]); return t; }
+function panelModel(){
+  const outline=[[0,0],[1,0],[1,1],[0,1]], tris=[[0,1,2],[0,2,3]];
+  const verts=outline.map(([u,v])=>[ (u-0.5)*1.4, -(v-0.5)*1.4, 0 ]);
+  return { verts, faces:[{ name:'Panel', ring:[0,1,2,3], tris }] };
+}
+function cubeModel(){
+  const h=0.7, v=[[-h,-h,-h],[h,-h,-h],[h,h,-h],[-h,h,-h],[-h,-h,h],[h,-h,h],[h,h,h],[-h,h,h]];
+  const f=(a,b,c,d,name)=>({name, ring:[a,b,c,d], tris:[[a,b,c],[a,c,d]]});
+  return { verts:v, faces:[
+    f(5,1,2,6,'Right +X'), f(0,4,7,3,'Left −X'), f(3,7,6,2,'Top +Y'),
+    f(4,0,1,5,'Bottom −Y'), f(4,5,6,7,'Front +Z'), f(1,0,3,2,'Back −Z') ] };
+}
+function prismModel(n){
+  const r=0.7,h=0.8, verts=[], top=[], bot=[];
+  for(let i=0;i<n;i++){ const a=i/n*Math.PI*2, x=Math.cos(a)*r, z=Math.sin(a)*r;
+    verts.push([x,h,z]); top.push(verts.length-1); verts.push([x,-h,z]); bot.push(verts.length-1); }
+  const faces=[];
+  for(let i=0;i<n;i++){ const j=(i+1)%n;
+    faces.push({name:'Side '+(i+1), ring:[top[i],top[j],bot[j],bot[i]],
+      tris:[[top[i],top[j],bot[j]],[top[i],bot[j],bot[i]]]}); }
+  faces.push({name:'Top',    ring:top,                    tris:fanTris(top)});
+  faces.push({name:'Bottom', ring:bot.slice().reverse(),  tris:fanTris(bot.slice().reverse())});
+  return { verts, faces };
+}
+function pyramidModel(n){
+  const r=0.75,h=0.9, verts=[], base=[];
+  for(let i=0;i<n;i++){ const a=i/n*Math.PI*2; verts.push([Math.cos(a)*r,-h*0.5,Math.sin(a)*r]); base.push(verts.length-1); }
+  const apex=verts.length; verts.push([0,h*0.5,0]);
+  const faces=[];
+  for(let i=0;i<n;i++){ const j=(i+1)%n; faces.push({name:'Side '+(i+1), ring:[apex,base[i],base[j]], tris:[[apex,base[i],base[j]]]}); }
+  faces.push({name:'Base', ring:base.slice().reverse(), tris:fanTris(base.slice().reverse())});
+  return { verts, faces };
+}
+// synthetic 4-corner ring for an arbitrary set of triangles: the planar bounding rect on
+// the set's area-weighted mean plane (CCW so the ring normal matches the tri winding).
+// Appends the 4 corner verts to `verts` and returns their indices.
+function faceRectRing(verts, tris){
+  let nx=0,ny=0,nz=0;
+  for(const t of tris){ const a=verts[t[0]],b=verts[t[1]],c=verts[t[2]];
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2], vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+    nx+=uy*vz-uz*vy; ny+=uz*vx-ux*vz; nz+=ux*vy-uy*vx; }
+  let l=Math.hypot(nx,ny,nz); if(l<1e-12){ nx=0;ny=0;nz=1; l=1; } nx/=l;ny/=l;nz/=l;
+  let tx,ty,tz;                                // in-plane basis t=up×n, b=n×t
+  if(Math.abs(ny)<0.99){ tx=nz; ty=0; tz=-nx; } else { tx=0; ty=-nz; tz=ny; }
+  const tl=Math.hypot(tx,ty,tz)||1; tx/=tl;ty/=tl;tz/=tl;
+  const bx=ny*tz-nz*ty, by=nz*tx-nx*tz, bz=nx*ty-ny*tx;
+  let minU=1e9,maxU=-1e9,minV=1e9,maxV=-1e9,d=0,cnt=0;
+  for(const t of tris) for(const i of t){ const p=verts[i];
+    const u=p[0]*tx+p[1]*ty+p[2]*tz, v=p[0]*bx+p[1]*by+p[2]*bz;
+    if(u<minU)minU=u; if(u>maxU)maxU=u; if(v<minV)minV=v; if(v>maxV)maxV=v;
+    d+=p[0]*nx+p[1]*ny+p[2]*nz; cnt++; }
+  d=d/cnt+0.004;                               // ring floats a hair above the mean plane (highlight visibility)
+  const corner=(u,v)=>{ verts.push([tx*u+bx*v+nx*d, ty*u+by*v+ny*d, tz*u+bz*v+nz*d]); return verts.length-1; };
+  return [corner(minU,minV), corner(maxU,minV), corner(maxU,maxV), corner(minU,maxV)];
+}
+// weld an external mesh into indexed, position-only geometry, centered and normalized
+function prepareSource(obj){
+  const parts=[]; let total=0;
+  obj.traverse(c=>{ if(c.isMesh&&c.geometry&&c.geometry.attributes.position){
+    const g=c.geometry.index?c.geometry.toNonIndexed():c.geometry;
+    parts.push(g.attributes.position.array); total+=g.attributes.position.array.length; }});
+  if(!total) return null;
+  const pos=new Float32Array(total); let off=0;
+  for(const a of parts){ pos.set(a,off); off+=a.length; }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const merged=BufferGeometryUtils.mergeVertices(g,1e-5);
+  merged.computeBoundingBox();
+  const c=merged.boundingBox.getCenter(new THREE.Vector3()), sz=merged.boundingBox.getSize(new THREE.Vector3());
+  const s=1.6/Math.max(sz.x,sz.y,sz.z,1e-9), p=merged.attributes.position.array;
+  for(let i=0;i<p.length;i+=3){ p[i]=(p[i]-c.x)*s; p[i+1]=(p[i+1]-c.y)*s; p[i+2]=(p[i+2]-c.z)*s; }
+  return { pos:p, index:new Uint32Array(merged.index.array) };
+}
+// external model: decimate, then union adjacent near-coplanar tris into flat "regions".
+// Each region becomes an ordinary face whose ring is a synthetic rectangle (the region's
+// planar bounding rect), so selection / flat fill / photo grab / export all just work:
+// the 4-corner ring gives every region the exact-homography quad selector.
+function externalModel(){
+  const src=state.source;
+  const target=Math.max(3, Math.min(Math.floor(src.index.length/3), state.decimate.target))*3;
+  const [simp]=MeshoptSimplifier.simplify(src.index, src.pos, 3, target, 1, []);   // error uncapped: the budget governs
+  const P=src.pos;
+  const tri=[], triN=[], triA=[];              // zero-area tris are dropped — each would become a junk region/cell
+  for(let k=0;k<simp.length;k+=3){
+    const a=simp[k]*3,b=simp[k+1]*3,c=simp[k+2]*3;
+    const ux=P[b]-P[a],uy=P[b+1]-P[a+1],uz=P[b+2]-P[a+2];
+    const vx=P[c]-P[a],vy=P[c+1]-P[a+1],vz=P[c+2]-P[a+2];
+    const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const l=Math.hypot(nx,ny,nz);
+    if(l<1e-9) continue;
+    tri.push(simp[k],simp[k+1],simp[k+2]); triN.push(nx/l,ny/l,nz/l); triA.push(l/2);
+  }
+  const nTri=tri.length/3;
+  const cosT=Math.cos(state.decimate.angle*Math.PI/180);
+  const parent=new Int32Array(nTri); for(let i=0;i<nTri;i++)parent[i]=i;
+  const find=x=>{ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; };
+  const edges=new Map();                       // shared edge -> tris; union within merge angle
+  for(let t=0;t<nTri;t++)for(let e=0;e<3;e++){
+    const u=tri[t*3+e], v=tri[t*3+(e+1)%3], key=u<v?u+'_'+v:v+'_'+u;
+    const list=edges.get(key);
+    if(!list){ edges.set(key,[t]); continue; }
+    for(const o of list){
+      const d=triN[t*3]*triN[o*3]+triN[t*3+1]*triN[o*3+1]+triN[t*3+2]*triN[o*3+2];
+      if(d>=cosT){ const ra=find(t),rb=find(o); if(ra!==rb) parent[ra]=rb; }
+    }
+    list.push(t);
+  }
+  const regions=new Map();                     // root -> tri list
+  for(let t=0;t<nTri;t++){ const r=find(t); let l=regions.get(r); if(!l){ l=[]; regions.set(r,l); } l.push(t); }
+  let regs=[...regions.values()];
+  // absorb under-sized regions into the neighbour they share the most boundary with —
+  // region-level (not per-tri), so sliver chains can't fuse two big faces through each other
+  const absorb=decAbsorbFrac(state.decimate.absorb);
+  if(absorb>0 && regs.length>1){
+    let total=0; for(let t=0;t<nTri;t++) total+=triA[t];
+    const thresh=total*absorb;
+    const triReg=new Int32Array(nTri); regs.forEach((list,rid)=>{ for(const t of list) triReg[t]=rid; });
+    const pair=new Map();                      // 'a_b' region pair -> shared boundary length
+    for(const [key,list] of edges){
+      if(list.length<2) continue;
+      const [u,v]=key.split('_');
+      const len=Math.hypot(P[u*3]-P[v*3], P[u*3+1]-P[v*3+1], P[u*3+2]-P[v*3+2]);
+      for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){
+        const a=triReg[list[i]], b=triReg[list[j]]; if(a===b) continue;
+        const k=a<b? a+'_'+b : b+'_'+a; pair.set(k,(pair.get(k)||0)+len);
+      }
+    }
+    const rp=new Int32Array(regs.length); for(let i=0;i<rp.length;i++) rp[i]=i;
+    const rfind=x=>{ while(rp[x]!==x){ rp[x]=rp[rp[x]]; x=rp[x]; } return x; };
+    const areas=regs.map(list=>list.reduce((s,t)=>s+triA[t],0));
+    for(let pass=0; pass<20; pass++){
+      const rootArea=new Map(), nbr=new Map();
+      for(let r=0;r<regs.length;r++){ const rr=rfind(r); rootArea.set(rr,(rootArea.get(rr)||0)+areas[r]); }
+      for(const [k,len] of pair){
+        const [a,b]=k.split('_').map(Number), ra=rfind(a), rb=rfind(b); if(ra===rb) continue;
+        if(!nbr.has(ra)) nbr.set(ra,new Map()); if(!nbr.has(rb)) nbr.set(rb,new Map());
+        nbr.get(ra).set(rb,(nbr.get(ra).get(rb)||0)+len); nbr.get(rb).set(ra,(nbr.get(rb).get(ra)||0)+len);
+      }
+      let merged=false;
+      const smalls=[...rootArea.entries()].filter(([r,a])=>a<thresh&&nbr.has(r)).sort((x,y)=>x[1]-y[1]);
+      for(const [r] of smalls){
+        if(rfind(r)!==r) continue;             // absorbed earlier this pass
+        let best=-1,bl=-1;
+        for(const [o,l] of nbr.get(r)){ const ro=rfind(o); if(ro!==r&&l>bl){ bl=l; best=ro; } }
+        if(best>=0){ rp[r]=best; merged=true; }
+      }
+      if(!merged) break;
+    }
+    const byRoot=new Map();
+    regs.forEach((list,rid)=>{ const r=rfind(rid); let acc=byRoot.get(r); if(!acc){ acc=[]; byRoot.set(r,acc); } acc.push(...list); });
+    regs=[...byRoot.values()];
+  }
+  const verts=[], remap=new Map(), faces=[];
+  const vi=i=>{ let m=remap.get(i); if(m===undefined){ m=verts.length; verts.push([P[i*3],P[i*3+1],P[i*3+2]]); remap.set(i,m); } return m; };
+  for(const tris of regs){
+    const mtris=tris.map(t=>[vi(tri[t*3]),vi(tri[t*3+1]),vi(tri[t*3+2])]);
+    faces.push({ name:'Region '+(faces.length+1), ring:faceRectRing(verts,mtris), tris:mtris });
+  }
+  state.decStats={ src:src.index.length/3, tris:nTri, regions:faces.length };
+  return { verts, faces, noFlip:true };
+}
+// ------------------------------------------------------------------ scene objects
+// the scene is a list of objects; all faces index into the shared state.verts pool, so
+// the merged model is a flat concat and everything downstream (atlas, fills, tri edits,
+// export) just sees one big model
+function sceneModel(){ return { verts: state.verts, faces: state.objects.flatMap(o=>o.faces), noFlip: true }; }
+let objCounter=0;
+function addObject(kind, base, baseName){
+  const name=(baseName || kind[0].toUpperCase()+kind.slice(1))+' '+(++objCounter);
+  const off=state.verts.length;
+  for(const v of base.verts) state.verts.push(v);
+  const faces=base.faces.map(f=>({ name: name+' · '+f.name, ring: f.ring.map(i=>i+off), tris: f.tris.map(t=>t.map(i=>i+off)) }));
+  const obj={ name, kind, faces };
+  state.objects.push(obj);
+  buildMesh();
+  return obj;
+}
+function objectOfFace(face){ return state.objects.find(o=>o.faces.includes(face)); }
+function objectVerts(obj){
+  const s=new Set();
+  for(const f of obj.faces){ f.ring.forEach(i=>s.add(i)); for(const t of f.tris) for(const i of t) s.add(i); }
+  return s;
+}
+// a face going away (object dropped, tris dissolved, verts merged/deleted out from under it)
+// takes its painted regions with it — they're masks on a face that no longer exists
+function dropFaceAux(f){
+  delete state.fills[f.name]; delete grabCache[f.name];
+  if(state.selFace===f.name) clearSelection();
+  for(const r of f.regions||[]){
+    delete state.fills[r.name]; delete grabCache[r.name];
+    if(state.selFace===r.name) clearSelection();
+  }
+}
+function dropObject(obj){
+  const i=state.objects.indexOf(obj); if(i<0) return;
+  state.objects.splice(i,1);
+  for(const f of obj.faces) dropFaceAux(f);
+}
+function clearSelection(){
+  state.selFace=null;
+  document.getElementById('selName').textContent='none selected';
+  document.getElementById('flatRow').hidden=true; document.getElementById('photoBlock').hidden=true;
+  document.getElementById('fillType').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+  document.getElementById('subFaceBtn').hidden=false;
+  document.getElementById('subFaceMode').hidden=false;
+  document.getElementById('flattenBtn').hidden=false;
+  document.getElementById('delObjBtn').hidden=false;
+  document.getElementById('delRegionBtn').hidden=true;
+}
+// primitives are built centered at the origin with mixed windings; flip inward tris once
+// at creation (same heuristic assemble used to apply at render time)
+function fixWinding(base){
+  for(const f of base.faces) for(const t of f.tris){
+    const [a,b,c]=t.map(i=>base.verts[i]);
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2], vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+    const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const cx=(a[0]+b[0]+c[0])/3, cy=(a[1]+b[1]+c[1])/3, cz=(a[2]+b[2]+c[2])/3;
+    if(Math.hypot(cx,cy,cz)>0.05 && cx*nx+cy*ny+cz*nz<0){ const tmp=t[1]; t[1]=t[2]; t[2]=tmp; }
+  }
+  return base;
+}
+function primitiveBase(kind){
+  if(kind==='panel')   return panelModel();
+  if(kind==='prism')   return prismModel(state.sides);
+  if(kind==='pyramid') return pyramidModel(state.sides);
+  return cubeModel();
+}
+
+// ------------------------------------------------------------------ vertex fit engine
+const lockedVerts=new Set();                     // vert indices pinned during editing/fit
+function objectTriVerts(obj){                    // real geometry verts (rings may be synthetic)
+  const s=new Set();
+  for(const f of obj.faces) for(const t of f.tris) for(const i of t) s.add(i);
+  return s;
+}
+function allLocked(obj){                          // true iff every current vert of obj is locked
+  if(!obj) return false;
+  const vs=[...objectTriVerts(obj)];
+  return vs.length>0 && vs.every(vi=>lockedVerts.has(vi));
+}
+function refreshRings(obj){                      // synthetic rings follow moved verts; intrinsic rings move by themselves
+  for(const f of obj.faces){
+    const tv=new Set(); for(const t of f.tris) for(const i of t) tv.add(i);
+    if(!f.ring || !f.ring.every(i=>tv.has(i))) f.ring=faceRectRing(state.verts,f.tris);
+  }
+}
+function objAdjacency(obj){
+  const adj=new Map();
+  const add=(a,b)=>{ let s=adj.get(a); if(!s){ s=new Set(); adj.set(a,s); } s.add(b); };
+  for(const f of obj.faces) for(const t of f.tris) for(let e=0;e<3;e++){ add(t[e],t[(e+1)%3]); add(t[(e+1)%3],t[e]); }
+  return adj;
+}
+// split edge (a,b) at parameter t: every tri sharing the edge (across all faces/objects,
+// so no T-junction cracks) splits in two; intrinsic rings gain the vert in their outline
+function splitEdge(a,b,t){
+  const A=state.verts[a], B=state.verts[b], m=state.verts.length;
+  state.verts.push([A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t, A[2]+(B[2]-A[2])*t]);
+  const affected=new Set();
+  for(const o of state.objects) for(const f of o.faces){
+    for(let j=f.tris.length-1;j>=0;j--){
+      const tr=f.tris[j];
+      let i=-1;
+      for(let k=0;k<3;k++){ const u=tr[k], w=tr[(k+1)%3]; if((u===a&&w===b)||(u===b&&w===a)){ i=k; break; } }
+      if(i<0) continue;
+      const u=tr[i], v=tr[(i+1)%3], w=tr[(i+2)%3];
+      f.tris.splice(j,1,[u,m,w],[m,v,w]);        // preserves winding
+      affected.add(f);
+    }
+    const ring=f.ring;
+    for(let i=0;i<ring.length;i++){ const p=ring[i], q=ring[(i+1)%ring.length];
+      if((p===a&&q===b)||(p===b&&q===a)){ ring.splice(i+1,0,m); affected.add(f); break; } }
+  }
+  for(const f of affected) delete grabCache[f.name];
+  for(const o of new Set([...affected].map(f=>objectOfFace(f)).filter(Boolean))) refreshRings(o);
+  return m;
+}
+// weld 2+ vertices of one object into a single vertex at their average position — the
+// inverse of splitEdge. Every triangle referencing a merged-away vertex gets remapped to
+// the survivor; a triangle that collapses to two-or-fewer distinct corners (both its ends
+// were merged into each other) is dropped, and a face left with no triangles dissolves
+// (mirrors finishEdit's "emptied faces dissolve"). Rings aren't patched directly — a stale
+// ring's vertices no longer being a subset of the face's tri-vertex set is exactly what
+// refreshRings already detects, regenerating a synthetic one the same way tri-editing does.
+function mergeVerts(indices, obj){
+  if(!obj || indices.length<2) return -1;
+  const survivor=Math.min(...indices);
+  const rest=indices.filter(i=>i!==survivor);
+  const removeSet=new Set(rest);
+  let sx=0,sy=0,sz=0;
+  for(const vi of indices){ const p=state.verts[vi]; sx+=p[0]; sy+=p[1]; sz+=p[2]; }
+  state.verts[survivor]=[sx/indices.length, sy/indices.length, sz/indices.length];
+  for(const f of obj.faces){
+    f.tris = f.tris
+      .map(t=>t.map(vi=>removeSet.has(vi)?survivor:vi))
+      .filter(t=>t[0]!==t[1] && t[1]!==t[2] && t[0]!==t[2]);
+    delete f.grid; delete f.strip;                 // stale after any tri remap, same as tri-editing
+  }
+  for(let i=obj.faces.length-1;i>=0;i--){
+    const f=obj.faces[i];
+    if(!f.tris.length){
+      dropFaceAux(f);
+      obj.faces.splice(i,1);
+    } else delete grabCache[f.name];
+  }
+  if(obj.rings) obj.rings=obj.rings.map(ring=>
+    ring.map(vi=>removeSet.has(vi)?survivor:vi).filter((vi,i,a)=>vi!==a[i-1]));   // drop a duplicate left by the remap (splitEdge on a self-pair would silently no-op)
+  const anyLocked=indices.some(vi=>lockedVerts.has(vi));
+  for(const vi of rest) lockedVerts.delete(vi);
+  if(anyLocked) lockedVerts.add(survivor); else lockedVerts.delete(survivor);
+  if(!obj.faces.length) dropObject(obj);
+  else refreshRings(obj);
+  return survivor;
+}
+// delete vertices outright: drop every triangle touching any of them (leaves a hole rather
+// than filling it back in — that'd need re-triangulating the surrounding boundary, which
+// Merge already covers for the "clean up nearby verts" case this is usually paired with)
+function deleteVerts(indices, obj){
+  if(!obj || !indices.length) return false;
+  const removeSet=new Set(indices);
+  for(const f of obj.faces){
+    f.tris = f.tris.filter(t=>!t.some(vi=>removeSet.has(vi)));
+    delete f.grid; delete f.strip;
+  }
+  for(let i=obj.faces.length-1;i>=0;i--){
+    const f=obj.faces[i];
+    if(!f.tris.length){
+      dropFaceAux(f);
+      obj.faces.splice(i,1);
+    } else delete grabCache[f.name];
+  }
+  if(obj.rings) obj.rings=obj.rings.map(ring=>ring.filter(vi=>!removeSet.has(vi)));
+  for(const vi of indices) lockedVerts.delete(vi);
+  if(!obj.faces.length) dropObject(obj);
+  else refreshRings(obj);
+  return true;
+}
+// project every vertex the face's own triangles touch onto their area-weighted best-fit
+// plane — the exact same normal-sum-over-tris convention faceRectRing uses to seat a
+// synthetic ring, so a flattened face ends up sitting on the very plane the atlas already
+// treats it as being on. Straightens out any bulge Fit/Smooth/dragging left behind. A
+// vertex here may belong to a NEIGHBOURING face too (the shared-pool architecture every
+// vertex edit in this app already lives with — Merge, Delete, Smooth, Fit all move shared
+// verts the same way), so flattening one face can put a crease in whatever's next to it;
+// that's an inherent trade-off of editing shared geometry, not something to paper over here.
+function flattenFace(face){
+  if(!face||!face.tris.length) return false;
+  const vSet=new Set(); for(const t of face.tris) for(const vi of t) vSet.add(vi);
+  if(vSet.size<3) return false;
+  let nx=0,ny=0,nz=0;
+  for(const t of face.tris){ const a=state.verts[t[0]],b=state.verts[t[1]],c=state.verts[t[2]];
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2], vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+    nx+=uy*vz-uz*vy; ny+=uz*vx-ux*vz; nz+=ux*vy-uy*vx; }
+  const l=Math.hypot(nx,ny,nz); if(l<1e-9) return false;         // degenerate (zero-area) face
+  nx/=l; ny/=l; nz/=l;
+  let d=0; for(const vi of vSet){ const p=state.verts[vi]; d+=p[0]*nx+p[1]*ny+p[2]*nz; } d/=vSet.size;
+  for(const vi of vSet){
+    const p=state.verts[vi], off=(p[0]*nx+p[1]*ny+p[2]*nz)-d;
+    state.verts[vi]=[p[0]-off*nx, p[1]-off*ny, p[2]-off*nz];
+  }
+  return true;
+}
+// subdivide a profile prism along its extrusion axis: insert a midpoint ring between every
+// adjacent pair of rings in obj.rings (built via splitEdge, so tris/rings/UVs stay in sync
+// and no cracks appear). Repeatable — each call halves every segment again.
+function subdivideObj(obj){
+  if(!obj||!obj.rings||obj.rings.length<2) return false;
+  const rings=obj.rings, out=[rings[0]];
+  for(let k=0;k<rings.length-1;k++){
+    const a=rings[k], b=rings[k+1], n=Math.min(a.length,b.length), mid=[];
+    for(let i=0;i<n;i++) mid.push(splitEdge(a[i], b[i], 0.5));
+    out.push(mid, b);
+  }
+  obj.rings=out;
+  return true;
+}
+// subdivide one face as a whole: one shared center vertex (the face's own centroid) fanned
+// out to every edge of its OUTER boundary, each spoke split at the midpoint — a clean 2N-tri
+// wheel for an N-cornered face. Splitting per ORIGINAL internal triangle instead (the first
+// cut of this) looked "random" for any face triangulated as a fan/strip (N-gons, decimated
+// regions) — each triangle got its own independent mini-fan, so it read as a chaotic pinwheel
+// rather than one face subdividing. This derives the true boundary from the triangles
+// themselves (edges used by exactly one tri in the face), not from face.ring — which is only
+// a synthetic bounding rect for decimated regions and wouldn't be a real edge to split.
+function edgeKey(a,b){ return a<b? a+'_'+b : b+'_'+a; }
+function faceBoundaryLoop(face){
+  const count=new Map();                         // edgeKey -> how many of the face's own tris use it
+  for(const t of face.tris) for(let e=0;e<3;e++){
+    const a=t[e], b=t[(e+1)%3];
+    count.set(edgeKey(a,b), (count.get(edgeKey(a,b))||0)+1);
+  }
+  // a vertex can start BOTH a boundary edge and an interior (diagonal) one — e.g. a quad's
+  // corner touches its own outer edge and the diagonal — so direction must only be recorded
+  // for edges used exactly once, in a pass separate from counting (counts aren't final until
+  // every triangle's been seen)
+  const dir=new Map(); let start=-1;
+  for(const t of face.tris) for(let e=0;e<3;e++){
+    const a=t[e], b=t[(e+1)%3];
+    if(count.get(edgeKey(a,b))===1){ dir.set(a,b); if(start<0) start=a; }
+  }
+  if(start<0) return null;
+  const loop=[start]; let cur=dir.get(start), guard=0;
+  while(cur!==start){
+    if(cur===undefined||guard++>100000) return null;
+    loop.push(cur); cur=dir.get(cur);
+  }
+  return loop;
+}
+function subdivideFace(face){
+  if(!face||!face.tris.length) return false;
+  const obj=objectOfFace(face); if(!obj) return false;
+  const loop=faceBoundaryLoop(face); if(!loop||loop.length<3) return false;
+  const n=loop.length;
+  let cx=0,cy=0,cz=0;
+  for(const vi of loop){ const p=state.verts[vi]; cx+=p[0]; cy+=p[1]; cz+=p[2]; }
+  state.verts.push([cx/n, cy/n, cz/n]);
+  const center=state.verts.length-1;
+  const mids=loop.map((a,i)=>splitEdge(a, loop[(i+1)%n], 0.5));
+  const newTris=[];
+  for(let i=0;i<n;i++){ const j=(i+1)%n; newTris.push([center, loop[i], mids[i]], [center, mids[i], loop[j]]); }
+  face.tris=newTris;
+  delete face.grid; delete face.strip;              // wheel, grid and strip track incompatible structures
+  refreshRings(obj);
+  delete grabCache[face.name];
+  return true;
+}
+// grid alternative: every triangle sharing the wheel's one center vertex reads as a
+// starburst, especially on an elongated quad, and gets worse each repeat click since every
+// pass adds ANOTHER independent center on top of the last. This instead keeps a proper
+// (n+1)×(n+1) vertex grid on the face (face.grid, quad faces only — a grid has no meaning
+// for a 5+-cornered boundary), doubling it each call: existing rows/cols gain a
+// crack-free split-edge midpoint, and each of the n² existing cells gets ONE new interior
+// vertex (its own corners' average) — recursively refining every cell into 4, rather than
+// re-fanning the whole boundary from scratch. No vertex other than a cell's own 4 corners
+// ever touches more than 4 triangles, so it reads as a grid at any subdivision depth.
+// doubles an (rows+1)×(cols+1) vertex grid `g` (row/col edges must already be real mesh
+// edges) into a (2·rows+1)×(2·cols+1) one and re-triangulates the face from it. Shared by
+// the Grid and Strip subdivide modes below — Strip's two rails meet at a pole, where two
+// "opposite" grid corners are the very same vertex, so both the edge-split and the final
+// triangle emission tolerate a degenerate (collapsed) cell instead of assuming every corner
+// is distinct.
+function expandFaceGrid(face, obj, g){
+  const rows=g.length-1, cols=g[0].length-1;
+  const ng=[]; for(let i=0;i<=2*rows;i++) ng.push(new Array(2*cols+1));
+  for(let i=0;i<=rows;i++) for(let j=0;j<=cols;j++) ng[2*i][2*j]=g[i][j];
+  for(let i=0;i<=rows;i++) for(let j=0;j<cols;j++)
+    ng[2*i][2*j+1] = g[i][j]===g[i][j+1] ? g[i][j] : splitEdge(g[i][j], g[i][j+1], 0.5);
+  for(let i=0;i<rows;i++) for(let j=0;j<=cols;j++)
+    ng[2*i+1][2*j] = g[i][j]===g[i+1][j] ? g[i][j] : splitEdge(g[i][j], g[i+1][j], 0.5);
+  for(let i=0;i<rows;i++) for(let j=0;j<cols;j++){  // cell center — a brand-new vertex, no edge to share
+    const p00=state.verts[g[i][j]], p01=state.verts[g[i][j+1]], p10=state.verts[g[i+1][j]], p11=state.verts[g[i+1][j+1]];
+    state.verts.push([(p00[0]+p01[0]+p10[0]+p11[0])/4, (p00[1]+p01[1]+p10[1]+p11[1])/4, (p00[2]+p01[2]+p10[2]+p11[2])/4]);
+    ng[2*i+1][2*j+1]=state.verts.length-1;
+  }
+  const R=2*rows, C=2*cols, newTris=[];
+  // same diagonal direction in every cell — every regular interior grid vertex ends up
+  // touched by exactly 6 triangles, bounded and identical at any subdivision depth
+  // (checkerboarding the diagonal was tried and is worse: it pushes half of them to 8)
+  for(let i=0;i<R;i++) for(let j=0;j<C;j++){
+    const v00=ng[i][j], v01=ng[i][j+1], v10=ng[i+1][j], v11=ng[i+1][j+1];
+    if(v00!==v01 && v01!==v11 && v00!==v11) newTris.push([v00,v01,v11]);
+    if(v00!==v11 && v11!==v10 && v00!==v10) newTris.push([v00,v11,v10]);
+  }
+  face.tris=newTris;
+  refreshRings(obj);
+  delete grabCache[face.name];
+  return ng;
+}
+function subdivideFaceGrid(face){
+  const obj=objectOfFace(face); if(!obj) return false;
+  let g=face.grid;
+  if(!g){
+    const loop=faceBoundaryLoop(face); if(!loop||loop.length!==4) return false;   // quads only
+    const [a,b,c,d]=loop;                          // a→b→c→d→a is the face's own CCW boundary
+    g=[[a,b],[d,c]];
+    delete face.strip;
+  }
+  face.grid=expandFaceGrid(face, obj, g);
+  return true;
+}
+function polyDist(a,b){ const A=state.verts[a],B=state.verts[b]; return Math.hypot(A[0]-B[0],A[1]-B[1],A[2]-B[2]); }
+// grows a chain of vertex indices to exactly `k` points by INSERTING new ones — it never
+// discards or reroutes past an existing point, only splits between them. A vertex on this
+// chain may be shared with a neighbouring face (e.g. a profile cap's rail point is also a
+// Side face's corner) that has no way to know if we silently dropped it from the boundary;
+// an earlier version reparametrized the whole chain by arc length instead of inserting, so
+// on an uneven hand-drawn outline it would drop original points a neighbour still
+// referenced — exactly the torn-open holes this replaced.
+function upsampleChain(chain, k){
+  const extra=k-chain.length;
+  if(extra<=0) return chain.slice();
+  const segLens=[];
+  for(let i=0;i<chain.length-1;i++) segLens.push(polyDist(chain[i],chain[i+1])||1e-9);
+  const counts=new Array(segLens.length).fill(0);
+  for(let e=0;e<extra;e++){                        // greedily grow whichever segment's piece length is currently largest
+    let bi=0, bv=-1;
+    for(let i=0;i<segLens.length;i++){ const per=segLens[i]/(counts[i]+1); if(per>bv){ bv=per; bi=i; } }
+    counts[bi]++;
+  }
+  const out=[chain[0]];
+  for(let i=0;i<chain.length-1;i++){
+    const n=counts[i]; let left=chain[i];
+    for(let s=1;s<=n;s++){ const m=splitEdge(left, chain[i+1], 1/(n+2-s)); out.push(m); left=m; }  // n evenly-spaced points via sequential bisection from the left
+    out.push(chain[i+1]);
+  }
+  return out;
+}
+// Strip: for an N-gon that isn't a quad (a hand-drawn profile cap, a decimated region), the
+// Wheel pattern fans every triangle from one shared center — on an elongated shape that
+// reads as a starburst, and it gets worse each repeat click since every pass fans a *new*
+// center off the last one's boundary. This instead finds the two boundary vertices farthest
+// apart (the natural "ends" of an elongated outline), splits the boundary there into two
+// rails, resamples them to match point-for-point, and builds an ordinary two-rail grid
+// between them — collapsing to a single fan triangle at each end where the rails meet,
+// same as an evenly-spaced loft between two curves.
+function subdivideFaceStrip(face){
+  const obj=objectOfFace(face); if(!obj) return false;
+  let g=face.strip;
+  if(!g){
+    const loop=faceBoundaryLoop(face); if(!loop||loop.length<4) return false;
+    const n=loop.length;
+    let pi=0, pj=1, best=-1;
+    for(let i=0;i<n;i++) for(let j=i+1;j<n;j++){ const d=polyDist(loop[i],loop[j]); if(d>best){ best=d; pi=i; pj=j; } }
+    const railA=[]; for(let k=pi;;k=(k+1)%n){ railA.push(loop[k]); if(k===pj) break; }
+    const railB=[]; for(let k=pi;;k=(k-1+n)%n){ railB.push(loop[k]); if(k===pj) break; }   // the complementary arc, same pi→pj direction
+    const K=Math.max(railA.length, railB.length, 3);
+    const rowA=upsampleChain(railA,K), rowB=upsampleChain(railB,K);
+    // the rails' own edges are real (upsampleChain only splits existing boundary edges), but
+    // the "rungs" between corresponding rail points aren't — stitch those into real
+    // triangles first so expandFaceGrid's edge-splits below have something to find
+    const newTris=[];
+    for(let j=0;j<K-1;j++){
+      const a0=rowA[j], a1=rowA[j+1], b0=rowB[j], b1=rowB[j+1];
+      if(a0!==b0) newTris.push([a0,a1,b1]);
+      if(a1!==b1) newTris.push([a0,b1,b0]);
+    }
+    face.tris=newTris;
+    g=[rowA, rowB];
+    delete face.grid;
+  }
+  face.strip=expandFaceGrid(face, obj, g);
+  return true;
+}
+// spatial hash over the reference's vertex cloud — dense scans make nearest-vertex a
+// fine stand-in for nearest-surface-point, and queries stay O(a few cells)
+let refHash=null;
+function buildRefHash(){
+  refHash=null; if(!state.source) return;
+  const P=state.source.pos, cs=0.06, map=new Map();
+  for(let i=0;i<P.length;i+=3){
+    const k=Math.floor(P[i]/cs)+'_'+Math.floor(P[i+1]/cs)+'_'+Math.floor(P[i+2]/cs);
+    let l=map.get(k); if(!l){ l=[]; map.set(k,l); } l.push(i);
+  }
+  refHash={map,cs};
+}
+function closestRefPoint(x,y,z){
+  if(!refHash) return null;
+  const {map,cs}=refHash, P=state.source.pos;
+  const cx=Math.floor(x/cs), cy=Math.floor(y/cs), cz=Math.floor(z/cs);
+  let best=-1, bd=1e9;
+  for(let r=0;r<=24;r++){                        // reach ≈1.4 units — verts further than that get no pull
+    for(let dx=-r;dx<=r;dx++)for(let dy=-r;dy<=r;dy++)for(let dz=-r;dz<=r;dz++){
+      if(Math.max(Math.abs(dx),Math.abs(dy),Math.abs(dz))!==r) continue;      // this shell only
+      const l=map.get((cx+dx)+'_'+(cy+dy)+'_'+(cz+dz)); if(!l) continue;
+      for(const i of l){ const d=(P[i]-x)**2+(P[i+1]-y)**2+(P[i+2]-z)**2; if(d<bd){ bd=d; best=i; } }
+    }
+    if(best>=0 && bd<=(r*cs)*(r*cs)) break;      // closer shells can't beat it now
+  }
+  return best<0? null : [P[best],P[best+1],P[best+2]];
+}
+function vertexNormals(obj){                     // area-weighted outward normals of the cage
+  const n=new Map();
+  for(const f of obj.faces) for(const t of f.tris){
+    const [a,b,c]=t.map(i=>state.verts[i]);
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2], vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+    const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    for(const i of t){ let e=n.get(i); if(!e){ e=[0,0,0]; n.set(i,e); } e[0]+=nx; e[1]+=ny; e[2]+=nz; }
+  }
+  for(const e of n.values()){ const l=Math.hypot(e[0],e[1],e[2])||1; e[0]/=l; e[1]/=l; e[2]/=l; }
+  return n;
+}
+// support query: the FARTHEST reference point along the ray p+t·n within a cylinder of
+// radius R — a wrap-from-outside objective ("contain the model in my direction"),
+// instead of nearest-point (which makes cages dive inside the surface)
+function supportAlong(p,n,R,tmin=-0.7,tmax=0.7){
+  if(!refHash) return null;
+  const {map,cs}=refHash, P=state.source.pos;
+  const seen=new Set(); let best=null;
+  const reach=Math.ceil(R/cs)+1;
+  for(let t=tmin;t<=tmax;t+=cs){
+    const cx=Math.floor((p[0]+n[0]*t)/cs), cy=Math.floor((p[1]+n[1]*t)/cs), cz=Math.floor((p[2]+n[2]*t)/cs);
+    for(let dx=-reach;dx<=reach;dx++)for(let dy=-reach;dy<=reach;dy++)for(let dz=-reach;dz<=reach;dz++){
+      const key=(cx+dx)+'_'+(cy+dy)+'_'+(cz+dz);
+      if(seen.has(key)) continue; seen.add(key);
+      const l=map.get(key); if(!l) continue;
+      for(const i of l){
+        const rx=P[i]-p[0], ry=P[i+1]-p[1], rz=P[i+2]-p[2];
+        const tt=rx*n[0]+ry*n[1]+rz*n[2];
+        if(tt<tmin||tt>tmax) continue;
+        const px=rx-n[0]*tt, py=ry-n[1]*tt, pz=rz-n[2]*tt;
+        if(px*px+py*py+pz*pz>R*R) continue;
+        if(best===null||tt>best) best=tt;
+      }
+    }
+  }
+  return best;
+}
+// ------ symmetry: mirrored vertex pairs across declared world planes
+// pairing tolerance scales with the object's mean edge length, so chunky cages pair
+// generously while dense meshes stay strict
+function meanEdgeLen(obj){
+  let s=0,c=0;
+  for(const f of obj.faces) for(const t of f.tris) for(let e=0;e<3;e++){
+    const a=state.verts[t[e]], b=state.verts[t[(e+1)%3]];
+    s+=Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]); c++;
+  }
+  return c? s/c : 0.2;
+}
+function symPairs(obj,axis,tol){
+  tol=tol??0.35*meanEdgeLen(obj);
+  const vis=[...objectTriVerts(obj)], pairs=[], solo=[], used=new Set();
+  for(const vi of vis){
+    if(used.has(vi)) continue;
+    const p=state.verts[vi];
+    if(Math.abs(p[axis])<tol/2){ solo.push(vi); used.add(vi); continue; }
+    const m=p.slice(); m[axis]=-m[axis];
+    let best=-1, bd=tol;
+    for(const vj of vis){
+      if(used.has(vj)||vj===vi) continue;
+      const q=state.verts[vj];
+      const d=Math.hypot(q[0]-m[0],q[1]-m[1],q[2]-m[2]);
+      if(d<bd){ bd=d; best=vj; }
+    }
+    if(best>=0){ pairs.push([vi,best]); used.add(vi); used.add(best); }
+    else used.add(vi);                           // no partner: this vert stays free
+  }
+  return { pairs, solo };
+}
+function computeSymPairs(obj){
+  return [0,1,2].map(axis=>state.sym['xyz'[axis]] ? symPairs(obj,axis) : null);
+}
+function applySymmetry(sym){
+  for(let axis=0;axis<3;axis++){
+    const s=sym&&sym[axis]; if(!s) continue;
+    for(const [a,b] of s.pairs){
+      const pa=state.verts[a], pb=state.verts[b];
+      const mb=pb.slice(); mb[axis]=-mb[axis];
+      const avg=[(pa[0]+mb[0])/2,(pa[1]+mb[1])/2,(pa[2]+mb[2])/2];
+      state.verts[a]=avg;
+      const back=avg.slice(); back[axis]=-back[axis];
+      state.verts[b]=back;
+    }
+    for(const vi of s.solo) state.verts[vi][axis]=0;
+  }
+}
+function symPartnerOf(obj,vi,axis,tol){
+  tol=tol??0.35*meanEdgeLen(obj);
+  const p=state.verts[vi];
+  if(Math.abs(p[axis])<tol/2) return vi;         // on the plane: mirror of itself
+  const m=p.slice(); m[axis]=-m[axis];
+  let best=null, bd=tol;
+  for(const vj of objectTriVerts(obj)){
+    if(vj===vi) continue;
+    const q=state.verts[vj];
+    const d=Math.hypot(q[0]-m[0],q[1]-m[1],q[2]-m[2]);
+    if(d<bd){ bd=d; best=vj; }
+  }
+  return best;
+}
+// every declared mirror partner of `verts` (across all enabled sym axes) that isn't
+// already in `verts` itself — the extra set Merge/Delete need to pull in so the result
+// stays symmetric instead of only ever touching one side
+function symMirrorSet(obj, verts){
+  const src=new Set(verts), out=new Set();
+  for(let ax=0;ax<3;ax++){
+    if(!state.sym['xyz'[ax]]) continue;
+    for(const vi of verts){
+      const p=symPartnerOf(obj, vi, ax);
+      if(p!==null && !src.has(p)) out.add(p);
+    }
+  }
+  return [...out];
+}
+// find, per declared mirror axis, the OTHER face of the same object whose boundary is
+// exactly `face`'s current boundary mirrored — the two end caps of a symmetric profile
+// prism are the running example, but this is genuinely axis-by-axis: two faces can be
+// declared mirror partners across more than one active axis at once. Called BEFORE a
+// topology change, while `face`'s boundary loop still matches the partner's currently —
+// after subdividing, the loop grows (new edge-midpoints), so this has to be captured up
+// front and carried through rather than re-derived from the already-changed result.
+function findMirrorPartners(face){
+  const obj=objectOfFace(face); if(!obj) return [];
+  const loop=faceBoundaryLoop(face); if(!loop||loop.length<3) return [];
+  const tol=0.35*meanEdgeLen(obj), out=[];
+  for(let axis=0;axis<3;axis++){
+    if(!state.sym['xyz'[axis]]) continue;
+    if(loop.some(vi=>Math.abs(state.verts[vi][axis])<tol/2)) continue;   // straddles the plane — mirrors to itself, no distinct partner
+    const counts=new Map(); let ok=true;
+    for(const vi of loop){
+      const pj=symPartnerOf(obj, vi, axis, tol);
+      if(pj===null||pj===vi){ ok=false; break; }
+      for(const f of obj.faces) if(f!==face && f.tris.some(t=>t.includes(pj))) counts.set(f,(counts.get(f)||0)+1);
+    }
+    if(!ok) continue;
+    let best=null, bc=0;
+    for(const [f,c] of counts) if(c>bc){ bc=c; best=f; }
+    if(best && bc===loop.length) out.push({face:best, axis, loop});   // every boundary vert accounted for by the same one face
+  }
+  return out;
+}
+// apply the SAME subdivision `face` just got to its mirror `partner`, by feeding a mirrored
+// version of face's STARTING structure through the identical expandFaceGrid/spoke-splitting
+// primitives — not by independently re-deriving Strip's farthest-pair rail choice or Wheel's
+// boundary-loop start point on the partner's own geometry. Those choices aren't guaranteed
+// to land on mirror-corresponding vertices between two independently-triangulated faces even
+// when the input positions are already symmetric (a tie in farthest-pair distance, for one),
+// which is exactly what produced mismatched connectivity between two subdivided end caps
+// before this existed. Reusing the primitives also means partner's own splitEdge calls
+// correctly crack-prevent against WHATEVER borders partner (not face's neighbours) —
+// something a plain "copy face's triangles and remap vertices" pass can't do, since it
+// never touches partner's own edges through the shared splitEdge machinery at all.
+function mirrorSubdivideFace(face, entry, usedMode){
+  const {face:partner, axis, loop}=entry;
+  const obj=objectOfFace(face); if(!obj) return;
+  const tol=0.35*meanEdgeLen(obj);
+  const mirrorVert=vi=>{
+    const p=state.verts[vi];
+    if(Math.abs(p[axis])<tol/2) return vi;                        // on the plane: shared with the partner already
+    const pj=symPartnerOf(obj, vi, axis, tol);
+    if(pj!==null) return pj;
+    const m=p.slice(); m[axis]=-m[axis]; state.verts.push(m); return state.verts.length-1;
+  };
+  if(usedMode==='grid'){
+    let g=partner.grid;
+    if(!g){
+      if(loop.length!==4) return;
+      const [a,b,c,d]=loop.map(mirrorVert);
+      g=[[a,b],[d,c]];
+      delete partner.strip;
+    }
+    partner.grid=expandFaceGrid(partner, obj, g);
+  } else if(usedMode==='strip'){
+    let g=partner.strip;
+    if(!g){
+      const n=loop.length;
+      let pi=0, pj=1, best=-1;
+      for(let i=0;i<n;i++) for(let j=i+1;j<n;j++){ const d=polyDist(loop[i],loop[j]); if(d>best){ best=d; pi=i; pj=j; } }
+      const railA=[]; for(let k=pi;;k=(k+1)%n){ railA.push(loop[k]); if(k===pj) break; }
+      const railB=[]; for(let k=pi;;k=(k-1+n)%n){ railB.push(loop[k]); if(k===pj) break; }
+      const K=Math.max(railA.length, railB.length, 3);
+      const rowA=upsampleChain(railA.map(mirrorVert),K), rowB=upsampleChain(railB.map(mirrorVert),K);
+      const newTris=[];
+      for(let j=0;j<K-1;j++){
+        const a0=rowA[j], a1=rowA[j+1], b0=rowB[j], b1=rowB[j+1];
+        if(a0!==b0) newTris.push([a0,a1,b1]);
+        if(a1!==b1) newTris.push([a0,b1,b0]);
+      }
+      partner.tris=newTris;
+      g=[rowA,rowB];
+      delete partner.grid;
+    }
+    partner.strip=expandFaceGrid(partner, obj, g);
+  } else {                                                          // wheel
+    const n=loop.length, mloop=loop.map(mirrorVert);
+    let cx=0,cy=0,cz=0; for(const vi of mloop){ const p=state.verts[vi]; cx+=p[0]; cy+=p[1]; cz+=p[2]; }
+    state.verts.push([cx/n, cy/n, cz/n]);
+    const center=state.verts.length-1;
+    const mids=mloop.map((a,i)=>splitEdge(a, mloop[(i+1)%n], 0.5));
+    const newTris=[];
+    for(let i=0;i<n;i++){ const j=(i+1)%n; newTris.push([center, mloop[i], mids[i]], [center, mids[i], mloop[j]]); }
+    partner.tris=newTris;
+    delete partner.grid; delete partner.strip;
+  }
+  partner.tris = partner.tris.map(([a,b,c])=>[a,c,b]);              // built exactly like the primary — reflection flips handedness, so reverse winding once, uniformly, at the end
+  delete grabCache[partner.name];
+  refreshRings(obj);
+}
+// one fit step: each free vert slides along its outward normal to the local support
+// level; the displacement field is smoothed so neighbours move coherently
+function fitIteration(vis, adj, obj, sym, step=0.6, smooth=0.3){
+  const normals=vertexNormals(obj);
+  const disp=new Map();
+  for(const vi of vis){
+    if(lockedVerts.has(vi)) continue;
+    const n=normals.get(vi); if(!n) continue;
+    const p=state.verts[vi], nb=adj.get(vi);
+    let R=0.12;
+    if(nb&&nb.size){
+      let s=0; for(const q of nb){ const w=state.verts[q]; s+=Math.hypot(w[0]-p[0],w[1]-p[1],w[2]-p[2]); }
+      R=Math.min(0.35, Math.max(0.04, 0.4*s/nb.size));   // each vert owns ~its local patch
+    }
+    const t=supportAlong(p,n,R);
+    if(t!==null) disp.set(vi,t);
+  }
+  const sm=new Map();
+  for(const [vi,t] of disp){
+    const nb=adj.get(vi); let acc=t, c=1;
+    if(nb) for(const q of nb){ const tq=disp.get(q); if(tq!==undefined){ acc+=tq; c++; } }
+    sm.set(vi, t*(1-smooth)+(acc/c)*smooth);
+  }
+  for(const [vi,t] of sm){
+    const p=state.verts[vi], n=normals.get(vi);
+    state.verts[vi]=[p[0]+n[0]*t*step, p[1]+n[1]*t*step, p[2]+n[2]*t*step];
+  }
+  applySymmetry(sym);
+}
+// non-indexed geometry (each triangle owns its verts/uv); triMeta.face links back to the model face
+function assemble(model){
+  const pos=[],nor=[],uvs=[],triMeta=[];
+  model.faces.forEach((f,fi)=>{
+    f.tris.forEach(t=>{
+      const P=t.map(i=>model.verts[i]);
+      const ux=P[1][0]-P[0][0],uy=P[1][1]-P[0][1],uz=P[1][2]-P[0][2];
+      const vx=P[2][0]-P[0][0],vy=P[2][1]-P[0][1],vz=P[2][2]-P[0][2];
+      let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx; const nl=Math.hypot(nx,ny,nz)||1; nx/=nl;ny/=nl;nz/=nl;
+      const cx=(P[0][0]+P[1][0]+P[2][0])/3, cy=(P[0][1]+P[1][1]+P[2][1])/3, cz=(P[0][2]+P[1][2]+P[2][2])/3;
+      if(!model.noFlip && Math.hypot(cx,cy,cz)>0.05 && cx*nx+cy*ny+cz*nz<0){ nx=-nx;ny=-ny;nz=-nz; }   // outward (external models trust source winding)
+      for(const p of P){ pos.push(p[0],p[1],p[2]); nor.push(nx,ny,nz); uvs.push(0,0); }
+      triMeta.push({face:fi, vi:t.slice()});
+    });
+  });
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('normal',   new THREE.Float32BufferAttribute(nor,3));
+  g.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs,2));
+  return { geometry:g, triMeta };
+}
+function faceBasis(ring){
+  const o=ring[0]; let nx=0,ny=0,nz=0;
+  for(let i=0;i<ring.length;i++){ const a=ring[i],b=ring[(i+1)%ring.length];
+    nx+=(a[1]-b[1])*(a[2]+b[2]); ny+=(a[2]-b[2])*(a[0]+b[0]); nz+=(a[0]-b[0])*(a[1]+b[1]); }
+  let nl=Math.hypot(nx,ny,nz)||1; nx/=nl;ny/=nl;nz/=nl;
+  let tx=ring[1][0]-o[0],ty=ring[1][1]-o[1],tz=ring[1][2]-o[2]; const tl=Math.hypot(tx,ty,tz)||1; tx/=tl;ty/=tl;tz/=tl;
+  const bx=ny*tz-nz*ty, by=nz*tx-nx*tz, bz=nx*ty-ny*tx;
+  return {o,tx,ty,tz,bx,by,bz};
+}
+function proj2(p,B){ const dx=p[0]-B.o[0],dy=p[1]-B.o[1],dz=p[2]-B.o[2];
+  return [dx*B.tx+dy*B.ty+dz*B.tz, dx*B.bx+dy*B.by+dz*B.bz]; }
+
+// ------------------------------------------------------------------ warp / sample / homography
+function solveH(from,to){
+  const A=[],b=[];
+  for(let i=0;i<4;i++){ const {x,y}=from[i],{x:X,y:Y}=to[i];
+    A.push([x,y,1,0,0,0,-X*x,-X*y]); b.push(X);
+    A.push([0,0,0,x,y,1,-Y*x,-Y*y]); b.push(Y); }
+  const h=gauss(A,b); return [h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],1];
+}
+function gauss(A,b){
+  const n=b.length,M=A.map((r,i)=>[...r,b[i]]);
+  for(let c=0;c<n;c++){ let piv=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[piv][c]))piv=r;
+    [M[c],M[piv]]=[M[piv],M[c]]; const d=M[c][c]||1e-9;
+    for(let k=c;k<=n;k++)M[c][k]/=d;
+    for(let r=0;r<n;r++){ if(r===c)continue; const f=M[r][c]; for(let k=c;k<=n;k++)M[r][k]-=f*M[c][k]; } }
+  return M.map(r=>r[n]);
+}
+function applyH(H,x,y){ const w=H[6]*x+H[7]*y+H[8]; return {x:(H[0]*x+H[1]*y+H[2])/w,y:(H[3]*x+H[4]*y+H[5])/w}; }
+function sample(p,w,h,fx,fy){
+  fx=Math.max(0,Math.min(w-1,fx)); fy=Math.max(0,Math.min(h-1,fy));
+  const x0=Math.floor(fx),y0=Math.floor(fy),x1=Math.min(w-1,x0+1),y1=Math.min(h-1,y0+1);
+  const dx=fx-x0,dy=fy-y0,o=(x,y)=>(y*w+x)*4,out=[0,0,0];
+  for(let c=0;c<3;c++){ const a=p[o(x0,y0)+c]*(1-dx)+p[o(x1,y0)+c]*dx, b=p[o(x0,y1)+c]*(1-dx)+p[o(x1,y1)+c]*dx; out[c]=a*(1-dy)+b*dy; }
+  return out;
+}
+function triangulate(pts){
+  const n=pts.length; if(n<3) return []; if(n===3) return [[0,1,2]];
+  const idx=[...Array(n).keys()];
+  let area=0; for(let i=0;i<n;i++){ const a=pts[i],b=pts[(i+1)%n]; area+=a.x*b.y-b.x*a.y; }
+  if(area<0) idx.reverse();
+  const cross=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+  const inTri=(p,a,b,c)=>{ const d1=cross(a,b,p),d2=cross(b,c,p),d3=cross(c,a,p);
+    return !(((d1<0)||(d2<0)||(d3<0)) && ((d1>0)||(d2>0)||(d3>0))); };
+  const V=idx.slice(), tris=[]; let guard=0;
+  while(V.length>3 && guard++<10000){
+    let clipped=false;
+    for(let i=0;i<V.length;i++){
+      const i0=V[(i+V.length-1)%V.length], i1=V[i], i2=V[(i+1)%V.length];
+      const a=pts[i0],b=pts[i1],c=pts[i2];
+      if(cross(a,b,c)<=0) continue;
+      let ear=true;
+      for(const vi of V){ if(vi===i0||vi===i1||vi===i2) continue; if(inTri(pts[vi],a,b,c)){ear=false;break;} }
+      if(ear){ tris.push([i0,i1,i2]); V.splice(i,1); clipped=true; break; }
+    }
+    if(!clipped) break;
+  }
+  if(V.length===3) tris.push([V[0],V[1],V[2]]);
+  return tris;
+}
+// affine warp (n-gon faces): map src triangle -> dst triangle
+function warpTri(sp,sw,sh, src, dst, op, W, H){
+  const minx=Math.max(0,Math.floor(Math.min(dst[0].x,dst[1].x,dst[2].x)));
+  const maxx=Math.min(W-1,Math.ceil (Math.max(dst[0].x,dst[1].x,dst[2].x)));
+  const miny=Math.max(0,Math.floor(Math.min(dst[0].y,dst[1].y,dst[2].y)));
+  const maxy=Math.min(H-1,Math.ceil (Math.max(dst[0].y,dst[1].y,dst[2].y)));
+  const a=dst[0], d00=dst[1].x-a.x, d01=dst[1].y-a.y, d10=dst[2].x-a.x, d11=dst[2].y-a.y;
+  const den=d00*d11-d10*d01; if(Math.abs(den)<1e-9) return;
+  for(let y=miny;y<=maxy;y++)for(let x=minx;x<=maxx;x++){
+    const px=x+0.5-a.x, py=y+0.5-a.y;
+    const w1=(px*d11-py*d10)/den, w2=(py*d00-px*d01)/den, w0=1-w1-w2;
+    if(w0<-0.001||w1<-0.001||w2<-0.001) continue;
+    const sx=src[0].x*w0+src[1].x*w1+src[2].x*w2, sy=src[0].y*w0+src[1].y*w1+src[2].y*w2;
+    const s=sample(sp,sw,sh,sx,sy); const o=(y*W+x)*4;
+    op[o]=s[0];op[o+1]=s[1];op[o+2]=s[2];op[o+3]=255;
+  }
+}
+// perspective warp (4-gon faces): fill dst triangle, sampling via homography H (dst->src)
+function warpTriH(sp,sw,sh, H, dst, op, W, Hh){
+  const minx=Math.max(0,Math.floor(Math.min(dst[0].x,dst[1].x,dst[2].x)));
+  const maxx=Math.min(W-1,Math.ceil (Math.max(dst[0].x,dst[1].x,dst[2].x)));
+  const miny=Math.max(0,Math.floor(Math.min(dst[0].y,dst[1].y,dst[2].y)));
+  const maxy=Math.min(Hh-1,Math.ceil (Math.max(dst[0].y,dst[1].y,dst[2].y)));
+  const a=dst[0], d00=dst[1].x-a.x, d01=dst[1].y-a.y, d10=dst[2].x-a.x, d11=dst[2].y-a.y;
+  const den=d00*d11-d10*d01; if(Math.abs(den)<1e-9) return;
+  for(let y=miny;y<=maxy;y++)for(let x=minx;x<=maxx;x++){
+    const px=x+0.5-a.x, py=y+0.5-a.y;
+    const w1=(px*d11-py*d10)/den, w2=(py*d00-px*d01)/den, w0=1-w1-w2;
+    if(w0<-0.001||w1<-0.001||w2<-0.001) continue;
+    const s=applyH(H,x+0.5,y+0.5); const c=sample(sp,sw,sh,s.x,s.y); const o=(y*W+x)*4;
+    op[o]=c[0];op[o+1]=c[1];op[o+2]=c[2];op[o+3]=255;
+  }
+}
+// ------------------------------------------------------------------ stylize (PS1 look)
+const BAYER=[[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+function clamp(v){return v<0?0:v>255?255:v;}
+function medianCut(p,n){
+  // palette from a subsample — full-res grabs have millions of pixels; ~65k is plenty
+  const step=Math.max(1,Math.floor(p.length/4/65536));
+  let box=[]; for(let i=0;i<p.length;i+=4*step) if(p[i+3]>0) box.push([p[i],p[i+1],p[i+2]]);
+  if(!box.length) return [[128,128,128]];
+  let boxes=[box];
+  while(boxes.length<n){ let bi=0,brange=-1,bch=0;
+    boxes.forEach((bx,idx)=>{ for(let c=0;c<3;c++){ let mn=255,mx=0; bx.forEach(px=>{mn=Math.min(mn,px[c]);mx=Math.max(mx,px[c]);}); if(mx-mn>brange){brange=mx-mn;bi=idx;bch=c;} } });
+    if(brange<=0) break; const bx=boxes[bi]; bx.sort((a,b)=>a[bch]-b[bch]); const mid=bx.length>>1;
+    boxes.splice(bi,1,bx.slice(0,mid),bx.slice(mid)); }
+  return boxes.map(bx=>{const s=[0,0,0];bx.forEach(px=>{s[0]+=px[0];s[1]+=px[1];s[2]+=px[2];});const m=bx.length;return [Math.round(s[0]/m),Math.round(s[1]/m),Math.round(s[2]/m)];});
+}
+function nearest(pal,r,g,b){let bd=1e12,bc=pal[0];for(const c of pal){const d=(c[0]-r)**2+(c[1]-g)**2+(c[2]-b)**2;if(d<bd){bd=d;bc=c;}}return bc;}
+function stylizeCanvas(cv,s){
+  const W=cv.width,H=cv.height,ctx=cv.getContext('2d'),d=ctx.getImageData(0,0,W,H),p=d.data;
+  if(s.dither){ const levels=Math.max(2,Math.round(Math.cbrt(s.colors))),step=255/(levels-1);
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){ if(p[(y*W+x)*4+3]===0)continue; const off=(BAYER[y&3][x&3]/16-0.5)*step*s.ditherAmt,i=(y*W+x)*4;
+      p[i]=clamp(p[i]+off);p[i+1]=clamp(p[i+1]+off);p[i+2]=clamp(p[i+2]+off); } }
+  const pal=medianCut(p,s.colors);
+  for(let i=0;i<p.length;i+=4){ if(p[i+3]===0)continue; const c=nearest(pal,p[i],p[i+1],p[i+2]); p[i]=c[0];p[i+1]=c[1];p[i+2]=c[2]; }
+  ctx.putImageData(d,0,0);
+}
+
+// ------------------------------------------------------------------ atlas layout
+// transform that places a polygon (aspect-preserving) inside box (bx,by,bw,bh) with fractional margin m
+function polyTransform(pts, bx,by,bw,bh, m){
+  let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+  for(const p of pts){ minx=Math.min(minx,p[0]);miny=Math.min(miny,p[1]);maxx=Math.max(maxx,p[0]);maxy=Math.max(maxy,p[1]); }
+  const w=Math.max(1e-6,maxx-minx), h=Math.max(1e-6,maxy-miny);
+  const s=Math.min(bw*(1-2*m)/w, bh*(1-2*m)/h);
+  const cx=(minx+maxx)/2, cy=(miny+maxy)/2, ox=bx+bw/2, oy=by+bh/2;
+  return p=>[ ox+(p[0]-cx)*s, oy+(p[1]-cy)*s ];
+}
+function placePoly(pts, bx,by,bw,bh, m){ return pts.map(polyTransform(pts,bx,by,bw,bh,m)); }
+// atlas texture size scales with the grid so every cell keeps ≈ the Detail texel budget
+// (a fixed 512 divided among hundreds of region cells left each face ~10px)
+function maxDetail(){
+  let m=64;
+  for(const k in state.fills){ const f=state.fills[k]; if(f.type==='photo'&&f.sty) m=Math.max(m,f.sty.size); }
+  return m;
+}
+// floor is deliberately much higher than the Detail budget needs for fill content — grabFace
+// locks its own chunky-pixel resolution to `sty.size` regardless of this size (scale shrinks
+// to compensate as cwpx/chpx grow), so raising the floor never smooths out the retro pixelated
+// look. What it DOES fix is cell/region boundaries: a mask edge rasterized into only ~20-30px
+// of a small cell stair-steps hard once NearestFilter magnifies it onto a large visible
+// surface — that's aliasing from too few texels to resolve a diagonal line, not style.
+function atlasSize(cols){
+  let s=2048; while(s<cols*maxDetail() && s<4096) s*=2;
+  return s;
+}
+function computeAtlas(model){
+  const faces=model.faces, n=faces.length;
+  const cols=Math.max(1,Math.ceil(Math.sqrt(n))), rows=Math.max(1,Math.ceil(n/cols));
+  const cw=1/cols, ch=1/rows, margin=0.10, cells={};
+  faces.forEach((f,i)=>{
+    const col=i%cols, row=Math.floor(i/cols), cellX=col*cw, cellY=row*ch;
+    const B=faceBasis(f.ring.map(vi=>model.verts[vi]));
+    const pts2D=f.ring.map(vi=>proj2(model.verts[vi],B));
+    const T=polyTransform(pts2D, cellX, cellY, cw, ch, margin);    // atlas coords 0..1 (y-down)
+    const placed=pts2D.map(T);
+    // warp the grab over the face's OWN triangulation (ring-local indices): on a
+    // non-planar face the photo→cell map is only piecewise-affine, so if the warp
+    // tris differ from the mesh tris the content lands where the mesh doesn't
+    // sample it — smeared/shifted fills. Ear-clip only for tris off the ring.
+    const ringIx=new Map(); f.ring.forEach((vi,k)=>ringIx.set(vi,k));
+    const own=f.tris.every(t=>t.every(vi=>ringIx.has(vi))) ? f.tris.map(t=>t.map(vi=>ringIx.get(vi))) : null;
+    const tris=own ?? triangulate(pts2D.map(p=>({x:p[0],y:p[1]})));
+    const uvByVi={}; f.ring.forEach((vi,k)=>{ uvByVi[vi]=placed[k]; });
+    // region faces have tri verts inside the ring; project those through the same transform
+    for(const t of f.tris) for(const vi of t) if(!(vi in uvByVi)) uvByVi[vi]=T(proj2(model.verts[vi],B));
+    cells[f.name]={ col,row, cellX,cellY,cw,ch, poly2D:placed, tris, uvByVi, shape2D:pts2D };
+    // painted regions: masked sub-areas of this face's own cell, no geometry of their own.
+    // poly is already in this face's local basis (same frame as pts2D above), so the same T
+    // places it in the cell — inserted after the parent so it paints on top, and sharing the
+    // parent's rect keeps it lined up automatically through every atlas repack.
+    for(const rg of f.regions||[]){
+      cells[rg.name]={ col,row, cellX,cellY,cw,ch, parent:f.name, isRegion:true,
+        poly2D:rg.poly.map(T), tris:triangulate(rg.poly.map(p=>({x:p[0],y:p[1]}))), shape2D:rg.poly };
+    }
+  });
+  return { size:atlasSize(cols), cols, rows, cells };
+}
+// warp a face's source photo polygon into its atlas cell -> stylized cell canvas
+function grabFace(name){
+  const cell=state.atlas.cells[name], fill=state.fills[name];
+  const ph=fill&&fill.photo||state.photo;          // each face remembers the photo it was grabbed from
+  if(!fill||fill.type!=='photo'||!ph||!fill.src) return null;
+  const sty=fill.sty||state.sty;                   // each face carries its own stylize settings
+  const size=state.atlas.size, cwpx=Math.round(cell.cw*size), chpx=Math.round(cell.ch*size);
+  const scale=Math.min(1, sty.size/Math.max(cwpx,chpx));             // low-res grab -> chunky pixels
+  const gw=Math.max(4,Math.round(cwpx*scale)), gh=Math.max(4,Math.round(chpx*scale));
+  const cv=document.createElement('canvas'); cv.width=gw; cv.height=gh;
+  const od=cv.getContext('2d').createImageData(gw,gh); const op=od.data;
+  const pd=ph.getContext('2d').getImageData(0,0,ph.width,ph.height);
+  const sp=pd.data, sw=pd.width, sh=pd.height;
+  const dst=cell.poly2D.map(([u,v])=>({ x:(u-cell.cellX)*size*scale, y:(v-cell.cellY)*size*scale }));
+  // rotate/flip = which source handle feeds each cell corner (rotates/mirrors the grab)
+  const src0=fill.src.map(p=>({x:p.x,y:p.y})), N=src0.length, rot=((fill.rot||0)%N+N)%N;
+  const src=dst.map((_,k)=>{ const j=(k+rot)%N; return src0[fill.flip ? (N-1-j) : j]; });
+  if(cell.poly2D.length===4){ const H=solveH(dst, src);
+    for(const [ia,ib,ic] of cell.tris) warpTriH(sp,sw,sh,H,[dst[ia],dst[ib],dst[ic]],op,gw,gh); }
+  else { for(const [ia,ib,ic] of cell.tris) warpTri(sp,sw,sh,[src[ia],src[ib],src[ic]],[dst[ia],dst[ib],dst[ic]],op,gw,gh); }
+  cv.getContext('2d').putImageData(od,0,0);
+  stylizeCanvas(cv,sty);
+  return cv;
+}
+function regrab(name){ grabCache[name]=grabFace(name); }
+function regrabAll(){ for(const nm in state.fills) if(state.fills[nm].type==='photo') regrab(nm); }
+
+// the clean atlas canvas that becomes the texture (no UI overlays here)
+const atlasCanvas=document.createElement('canvas');
+let atlasTex=null;
+function renderAtlas(){
+  const size=state.atlas.size;
+  if(atlasCanvas.width!==size){                  // canvas resized → GPU texture must be recreated
+    atlasCanvas.width=size; atlasCanvas.height=size;
+    if(atlasTex){ atlasTex.dispose();
+      atlasTex=new THREE.CanvasTexture(atlasCanvas);
+      atlasTex.magFilter=THREE.NearestFilter; atlasTex.minFilter=THREE.NearestFilter;
+      if(mesh){ mesh.material.map=atlasTex; mesh.material.needsUpdate=true; } }
+  }
+  const g=atlasCanvas.getContext('2d'); g.imageSmoothingEnabled=false;
+  g.fillStyle='#0c0d10'; g.fillRect(0,0,size,size);
+  for(const name in state.atlas.cells){
+    const cell=state.atlas.cells[name], fill=state.fills[name];
+    const poly=cell.poly2D.map(([u,v])=>[u*size,v*size]);
+    g.save();
+    // a region's polygon is whatever the user drew, unclipped against its parent's actual
+    // shape — harmless on the model (nothing ever samples UVs outside the face it was drawn
+    // on), but pin it to its own cell rect here too so an oversized sketch can't paint over
+    // a neighbouring cell in the atlas preview/texture
+    if(cell.isRegion){ g.beginPath(); g.rect(cell.cellX*size, cell.cellY*size, cell.cw*size, cell.ch*size); g.clip(); }
+    g.beginPath(); poly.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1])); g.closePath();
+    if(!fill){ g.fillStyle='#2a2f38'; g.fill(); g.restore(); continue; }
+    if(fill.type==='flat'){ g.fillStyle=fill.color; g.fill(); g.restore(); continue; }
+    g.clip(); const gc=grabCache[name]||grabFace(name);
+    if(gc){ grabCache[name]=gc; g.drawImage(gc, cell.cellX*size, cell.cellY*size, cell.cw*size, cell.ch*size); }
+    else { g.fillStyle='#2a2f38'; g.fill(); }
+    g.restore();
+  }
+  if(atlasTex) atlasTex.needsUpdate=true;
+  renderAtlasView();
+}
+const atlasDisp=document.getElementById('atlas');
+function polyPath(g,poly2D,size){ g.beginPath(); poly2D.forEach(([u,v],i)=>{ const p=[u*size,v*size]; i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]); }); g.closePath(); }
+function renderAtlasView(){
+  const size=state.atlas.size, k=size/512;      // overlay scale: constant on-screen thickness
+  atlasDisp.width=size; atlasDisp.height=size;
+  const g=atlasDisp.getContext('2d'); g.imageSmoothingEnabled=false;
+  g.drawImage(atlasCanvas,0,0);
+  // cell grid + labels — one rect per face; a region only gets a thin outline of its own
+  // masked shape (drawing another full-cell rect on top of its parent's would just be noise)
+  for(const name in state.atlas.cells){ const c=state.atlas.cells[name];
+    if(c.isRegion){
+      g.strokeStyle='#565f6e'; g.lineWidth=k; g.setLineDash([3*k,2*k]);
+      polyPath(g,c.poly2D,size); g.stroke(); g.setLineDash([]);
+      continue;
+    }
+    g.strokeStyle='#333a45'; g.lineWidth=k; g.strokeRect(c.cellX*size, c.cellY*size, c.cw*size, c.ch*size);
+    g.fillStyle='#8b94a0'; g.font=(11*k)+'px sans-serif';
+    let label=name; if(g.measureText(label).width>c.cw*size-8*k) label=label.replace('Region ','');
+    g.fillText(label, c.cellX*size+5*k, c.cellY*size+13*k);
+  }
+  const outline=(name,color,lw)=>{
+    const c=state.atlas.cells[name]; if(!c) return;
+    g.strokeStyle=color; g.lineWidth=lw;
+    if(c.isRegion){ polyPath(g,c.poly2D,size); }
+    else { g.beginPath(); g.rect(c.cellX*size+lw/2, c.cellY*size+lw/2, c.cw*size-lw, c.ch*size-lw); }
+    g.stroke();
+  };
+  if(hoverFace && hoverFace!==state.selFace) outline(hoverFace,'#7f9dd8',2*k);
+  if(state.selFace) outline(state.selFace,'#ffe14d',3*k);
+}
+
+// ------------------------------------------------------------------ three.js
+const view=document.getElementById('view');
+const renderer=new THREE.WebGLRenderer({canvas:view,antialias:true,alpha:true});
+const scene=new THREE.Scene(); scene.fog=new THREE.Fog(0x14161a,4,9);
+const cam=new THREE.PerspectiveCamera(45,1,0.1,100); cam.position.set(2.2,1.6,2.8);
+const ctrl=new OrbitControls(cam,renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x334455,1.15));
+const dir=new THREE.DirectionalLight(0xffffff,0.55); dir.position.set(3,5,2); scene.add(dir);
+let mesh=null, cur=null, faceHi=null, hoverHi=null, hoverFace=null;
+let editHi=null, hoverTriHi=null, hoverTriIdx=-1;
+let activeCam=cam;                               // profile mode swaps in an ortho camera
+function resize(){ const w=view.clientWidth||1,h=view.clientHeight||1; renderer.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(document.getElementById('viewWrap'));
+(function loop(){ requestAnimationFrame(loop); ctrl.update(); renderer.render(scene,activeCam); })();
+
+// ------------------------------------------------------------------ resizable right panel
+// drags the view/panel split — the panel's ResizeObservers (viewWrap → renderer, photoWrap
+// → photo layout) already react to the width change, so nothing else needs to know this happened
+(function(){
+  const resizer=document.getElementById('panelResizer');
+  const root=document.documentElement;
+  const MIN=280, MAX=()=>Math.round(window.innerWidth*0.7);
+  const saved=+localStorage.getItem('ps2d-panel-w');
+  if(saved) root.style.setProperty('--panel-w', Math.max(MIN,Math.min(MAX(),saved))+'px');
+  resizer.addEventListener('pointerdown', e=>{
+    resizer.setPointerCapture(e.pointerId);
+    resizer.classList.add('dragging');
+    const startX=e.clientX, startW=resizer.nextElementSibling.getBoundingClientRect().width;
+    const onMove=ev=>{
+      const w=Math.max(MIN, Math.min(MAX(), startW-(ev.clientX-startX)));
+      root.style.setProperty('--panel-w', w+'px');
+    };
+    const onUp=()=>{
+      resizer.classList.remove('dragging');
+      resizer.removeEventListener('pointermove', onMove);
+      resizer.removeEventListener('pointerup', onUp);
+      localStorage.setItem('ps2d-panel-w', parseInt(getComputedStyle(root).getPropertyValue('--panel-w')));
+    };
+    resizer.addEventListener('pointermove', onMove);
+    resizer.addEventListener('pointerup', onUp);
+  });
+})();
+
+// ------------------------------------------------------------------ ghost reference
+let ghostMesh=null;
+function buildGhost(){
+  if(ghostMesh){ scene.remove(ghostMesh); ghostMesh.geometry.dispose(); ghostMesh.material.dispose(); ghostMesh=null; }
+  if(!state.source) return;
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(state.source.pos.slice(),3));
+  g.setIndex(new THREE.BufferAttribute(state.source.index.slice(),1));
+  g.computeVertexNormals();
+  ghostMesh=new THREE.Mesh(g, new THREE.MeshLambertMaterial({color:0x7fa0c8, transparent:true, opacity:0.28, depthWrite:false, side:THREE.DoubleSide}));
+  scene.add(ghostMesh);
+  document.getElementById('ghostBtn').hidden=false;
+  setGhost(true);
+}
+function setGhost(on){
+  if(ghostMesh) ghostMesh.visible=on;
+  document.getElementById('ghostBtn').classList.toggle('on', on&&!!ghostMesh);
+}
+document.getElementById('ghostBtn').addEventListener('click', ()=>{ if(ghostMesh) setGhost(!ghostMesh.visible); });
+
+// ------------------------------------------------------------------ move gizmo
+// the gizmo drives a proxy; each change applies the delta matrix to the object's verts,
+// so the object's stored geometry is always world-space and the merged model stays flat
+const tc=new TransformControls(cam, renderer.domElement);
+scene.add(tc);
+const tcProxy=new THREE.Object3D(); scene.add(tcProxy);
+let tcObj=null; const tcPrev=new THREE.Matrix4(); let rebuildQueued=false;
+tc.addEventListener('dragging-changed', e=>{
+  ctrl.enabled=!e.value;
+  if(e.value && tcObj) pushUndo();
+  if(!e.value && tcObj){ for(const f of tcObj.faces) delete grabCache[f.name]; buildMesh(); }  // regrab at rest
+});
+tc.addEventListener('objectChange', ()=>{
+  if(!tcObj) return;
+  tcProxy.updateMatrix();
+  const delta=tcProxy.matrix.clone().multiply(tcPrev.clone().invert());
+  const v=new THREE.Vector3();
+  for(const i of objectVerts(tcObj)){ const p=state.verts[i]; v.set(p[0],p[1],p[2]).applyMatrix4(delta); state.verts[i]=[v.x,v.y,v.z]; }
+  tcPrev.copy(tcProxy.matrix);
+  if(!rebuildQueued){ rebuildQueued=true; requestAnimationFrame(()=>{ rebuildQueued=false; buildMesh(); }); }
+});
+function attachGizmo(){
+  detachGizmo();
+  if(state.mode!=='move'||!state.selFace||!state.model) return;
+  const face=state.model.faces.find(f=>f.name===state.selFace); if(!face) return;
+  tcObj=objectOfFace(face); if(!tcObj) return;
+  let sx=0,sy=0,sz=0,n=0;
+  for(const i of objectVerts(tcObj)){ const p=state.verts[i]; sx+=p[0]; sy+=p[1]; sz+=p[2]; n++; }
+  tcProxy.position.set(sx/n,sy/n,sz/n); tcProxy.rotation.set(0,0,0); tcProxy.scale.set(1,1,1);
+  tcProxy.updateMatrix(); tcPrev.copy(tcProxy.matrix);
+  tc.attach(tcProxy);
+}
+function detachGizmo(){ tc.detach(); tcObj=null; }
+document.getElementById('tcMode').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  [...e.currentTarget.querySelectorAll('button')].forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  tc.setMode(b.dataset.t);
+});
+
+// ------------------------------------------------------------------ vertex handles + fit
+let vertsHi=null, vertsList=[];
+function selObject(){
+  if(!state.selFace||!state.model) return null;
+  const face=state.model.faces.find(f=>f.name===state.selFace);
+  return face? objectOfFace(face) : null;
+}
+function updateVertsHi(){
+  if(vertsHi){ scene.remove(vertsHi); vertsHi.geometry.dispose(); vertsHi.material.dispose(); vertsHi=null; }
+  vertsList=[];
+  const subBtn=document.getElementById('subdivBtn'), lockBtn=document.getElementById('lockAllBtn');
+  if(state.mode!=='verts'){ subBtn.hidden=true; lockBtn.hidden=true; return; }
+  const obj=selObject();
+  subBtn.hidden = !(obj&&obj.rings&&obj.rings.length>1);
+  lockBtn.hidden = !obj;
+  lockBtn.classList.toggle('on', allLocked(obj));
+  if(!obj) return;
+  vertsList=[...objectTriVerts(obj)];
+  const pos=[], col=[];
+  for(const vi of vertsList){
+    const p=state.verts[vi]; pos.push(p[0],p[1],p[2]);
+    if(vertSelMode && vertSel.has(vi)) col.push(1,0.7,0.15);         // selected: orange
+    else if(lockedVerts.has(vi)) col.push(1,0.32,0.32);              // locked: red
+    else col.push(0.26,0.93,0.5);                                    // free: green
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col,3));
+  vertsHi=new THREE.Points(g, new THREE.PointsMaterial({size:9, sizeAttenuation:false, vertexColors:true, depthTest:false}));
+  vertsHi.renderOrder=10;
+  scene.add(vertsHi);
+}
+function pickVert(e){
+  const r=renderer.domElement.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  let best=-1, bd=12; const v=new THREE.Vector3();
+  for(const vi of vertsList){
+    const p=state.verts[vi]; v.set(p[0],p[1],p[2]).project(cam);
+    const d=Math.hypot((v.x+1)/2*r.width-mx, (1-v.y)/2*r.height-my);
+    if(d<bd){ bd=d; best=vi; }
+  }
+  return best;
+}
+// ------ add-vert tool: click an edge to insert a vertex where you pointed
+let addVertMode=false, edgeMark=null;
+function pickEdge(e){
+  const obj=selObject(); if(!obj) return null;
+  const r=renderer.domElement.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  const v=new THREE.Vector3(), scr=new Map();
+  const proj=vi=>{ let s=scr.get(vi); if(!s){ const p=state.verts[vi]; v.set(p[0],p[1],p[2]).project(cam); s=[(v.x+1)/2*r.width,(1-v.y)/2*r.height]; scr.set(vi,s); } return s; };
+  let best=null, bd=10; const seen=new Set();
+  for(const f of obj.faces) for(const t of f.tris) for(let k=0;k<3;k++){
+    const a=t[k], b=t[(k+1)%3], key=a<b?a+'_'+b:b+'_'+a;
+    if(seen.has(key)) continue; seen.add(key);
+    const A=proj(a), B=proj(b), dx=B[0]-A[0], dy=B[1]-A[1], L2=dx*dx+dy*dy;
+    if(L2<1) continue;
+    let tt=((mx-A[0])*dx+(my-A[1])*dy)/L2; tt=Math.max(0.08,Math.min(0.92,tt));
+    const d=Math.hypot(A[0]+dx*tt-mx, A[1]+dy*tt-my);
+    if(d<bd){ bd=d; best={a,b,t:tt}; }
+  }
+  return best;
+}
+function updateEdgeMark(hit){
+  if(edgeMark){ scene.remove(edgeMark); edgeMark.geometry.dispose(); edgeMark.material.dispose(); edgeMark=null; }
+  if(!hit) return;
+  const A=state.verts[hit.a], B=state.verts[hit.b];
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([A[0]+(B[0]-A[0])*hit.t, A[1]+(B[1]-A[1])*hit.t, A[2]+(B[2]-A[2])*hit.t],3));
+  edgeMark=new THREE.Points(g, new THREE.PointsMaterial({size:11, sizeAttenuation:false, color:0xffe14d, depthTest:false}));
+  edgeMark.renderOrder=11;
+  scene.add(edgeMark);
+}
+function setAddVert(on){
+  addVertMode=on;
+  document.getElementById('addVertBtn').classList.toggle('on', on);
+  updateEdgeMark(null);
+  document.getElementById('viewHint').textContent = on
+    ? 'Click on an edge to insert a vertex there · ＋ Add vert again to finish' : HINTS.verts;
+}
+document.getElementById('addVertBtn').addEventListener('click', ()=>setAddVert(!addVertMode));
+// ------ vert-select tool: click, or drag a box over empty space, to select several
+// vertices — feeds two actions, ⛓ Merge (weld to one) and 🗑 Delete (remove + their tris)
+let vertSelMode=false; const vertSel=new Set();
+function updateSelBtns(){
+  document.getElementById('mergeSelBtn').hidden = !(vertSelMode && vertSel.size>=2);
+  document.getElementById('deleteSelBtn').hidden = !(vertSelMode && vertSel.size>=1);
+  document.getElementById('vertSelBtn').textContent = vertSel.size ? `⬚ Select verts (${vertSel.size})` : '⬚ Select verts';
+}
+function setVertSelMode(on){
+  vertSelMode=on;
+  if(!on) vertSel.clear();
+  document.getElementById('vertSelBtn').classList.toggle('on', on);
+  updateSelBtns();
+  updateVertsHi();
+  document.getElementById('viewHint').textContent = on
+    ? 'Click vertices, or drag a box over empty space to select many · ⛓ Merge or 🗑 Delete (or Enter/Delete key) · Esc to cancel' : HINTS.verts;
+}
+document.getElementById('vertSelBtn').addEventListener('click', ()=>setVertSelMode(!vertSelMode));
+function commitMerge(){
+  const obj=selObject(); if(!obj||vertSel.size<2) return;
+  pushUndo();
+  const sel=[...vertSel], mirror=symMirrorSet(obj, sel);   // weld the selection, then separately weld its mirror image so the result stays symmetric — one combined merge would collapse both sides onto each other instead
+  mergeVerts(sel, obj);
+  if(mirror.length>=2) mergeVerts(mirror, obj);
+  setVertSelMode(false);
+  buildMesh(); updateVertsHi();
+}
+function commitDelete(){
+  const obj=selObject(); if(!obj||vertSel.size<1) return;
+  pushUndo();
+  const sel=[...vertSel], mirror=symMirrorSet(obj, sel);
+  deleteVerts([...sel, ...mirror], obj);
+  setVertSelMode(false);
+  buildMesh(); updateVertsHi();
+}
+document.getElementById('mergeSelBtn').addEventListener('click', commitMerge);
+document.getElementById('deleteSelBtn').addEventListener('click', commitDelete);
+// drag-box select: pointerdown on empty space (not on a vertex) while armed starts a box;
+// every vertex whose screen projection lands inside it on release gets ADDED to the selection
+let boxSelStart=null;
+function boxSelRectFrom(e){
+  const r=renderer.domElement.getBoundingClientRect();
+  const x0=Math.min(boxSelStart[0],e.clientX), x1=Math.max(boxSelStart[0],e.clientX);
+  const y0=Math.min(boxSelStart[1],e.clientY), y1=Math.max(boxSelStart[1],e.clientY);
+  return { x0:x0-r.left, y0:y0-r.top, x1:x1-r.left, y1:y1-r.top };
+}
+function drawBoxSel(e){
+  const box=document.getElementById('boxSel');
+  if(!e){ box.hidden=true; return; }
+  const rect=boxSelRectFrom(e);
+  box.hidden=false;
+  box.style.left=rect.x0+'px'; box.style.top=rect.y0+'px';
+  box.style.width=(rect.x1-rect.x0)+'px'; box.style.height=(rect.y1-rect.y0)+'px';
+}
+document.getElementById('subdivBtn').addEventListener('click', ()=>{
+  const obj=selObject(); if(!obj||!obj.rings||obj.rings.length<2) return;
+  pushUndo();
+  subdivideObj(obj);
+  buildMesh(); updateVertsHi();
+});
+document.getElementById('lockAllBtn').addEventListener('click', ()=>{
+  const obj=selObject(); if(!obj) return;
+  pushUndo();
+  const lockingAll=!allLocked(obj);
+  for(const vi of objectTriVerts(obj)){ if(lockingAll) lockedVerts.add(vi); else lockedVerts.delete(vi); }
+  updateVertsHi();
+});
+document.getElementById('symSeg').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  pushUndo();
+  const k='xyz'[+b.dataset.a];
+  state.sym[k]=!state.sym[k];
+  b.classList.toggle('on', state.sym[k]);
+  const obj=selObject();
+  if(state.sym[k]&&obj){ applySymmetry(computeSymPairs(obj)); refreshRings(obj);   // snap symmetric right away
+    for(const f of obj.faces) delete grabCache[f.name];
+    buildMesh(); updateVertsHi(); }
+});
+
+let vHit=-1, vDragging=false, vSymP=[null,null,null]; const vPlane=new THREE.Plane();
+let pendingVertSnap=null;                        // taken at pointerdown, committed at pointerup — covers both a drag and a lock-toggle click with one snapshot
+// capture phase: runs before OrbitControls' pointerdown, so orbiting never starts on a handle
+renderer.domElement.addEventListener('pointerdown', e=>{
+  if(state.mode!=='verts') return;
+  if(vertSelMode){
+    if(pickVert(e)<0){ boxSelStart=[e.clientX,e.clientY]; ctrl.enabled=false; }   // empty space: start a box; a vertex hit falls through to the normal click-toggle on pointerup
+    return;
+  }
+  if(addVertMode) return;
+  vHit=pickVert(e); vDragging=false;
+  if(vHit>=0){
+    pendingVertSnap=snapshotScene();
+    ctrl.enabled=false;
+    const p=state.verts[vHit], n=new THREE.Vector3(); cam.getWorldDirection(n);
+    vPlane.setFromNormalAndCoplanarPoint(n, new THREE.Vector3(p[0],p[1],p[2]));
+    const obj=selObject();                        // mirror partners resolved at drag start
+    vSymP=[0,1,2].map(ax=>(state.sym['xyz'[ax]]&&obj)? symPartnerOf(obj,vHit,ax) : null);
+  }
+}, true);
+function vertDragMove(e){
+  const r=renderer.domElement.getBoundingClientRect();
+  const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
+  raycaster.setFromCamera(ndc,cam);
+  const out=new THREE.Vector3();
+  if(!raycaster.ray.intersectPlane(vPlane,out)) return;
+  state.verts[vHit]=[out.x,out.y,out.z];
+  for(let ax=0;ax<3;ax++){
+    const p2=vSymP[ax]; if(p2===null) continue;
+    if(p2===vHit) state.verts[vHit][ax]=0;        // on-plane vert stays on the plane
+    else { const m=state.verts[vHit].slice(); m[ax]=-m[ax]; state.verts[p2]=m; }
+  }
+  if(!rebuildQueued){ rebuildQueued=true; requestAnimationFrame(()=>{ rebuildQueued=false; buildMesh(); updateVertsHi(); }); }
+}
+function vertDragEnd(){
+  const obj=selObject();
+  if(obj){ refreshRings(obj); for(const f of obj.faces) delete grabCache[f.name]; }
+  buildMesh(); updateVertsHi();
+}
+let fitRunning=false;
+function runFit(obj){
+  if(fitRunning||!refHash||!obj) return;
+  fitRunning=true;
+  const vis=[...objectTriVerts(obj)], adj=objAdjacency(obj);
+  const sym=computeSymPairs(obj);                // pairs fixed at start so they can't drift apart
+  let it=0; const N=20;
+  (function step(){
+    const t=it/(N-1);                            // anneal: smooth early, pure support snap late
+    fitIteration(vis, adj, obj, sym, 0.45+0.45*t, 0.4*(1-t));
+    buildMesh(); updateVertsHi();
+    if(++it<N) requestAnimationFrame(step);
+    else {
+      refreshRings(obj);
+      for(const f of obj.faces) delete grabCache[f.name];
+      buildMesh(); updateVertsHi(); fitRunning=false;
+    }
+  })();
+}
+document.getElementById('fitBtn').addEventListener('click', ()=>{
+  if(!state.source){ document.getElementById('viewHint').textContent='Load a reference .obj first — Fit pulls vertices onto it.'; return; }
+  const obj=selObject();
+  if(!obj){ document.getElementById('viewHint').textContent='Select a face of the object to fit first.'; return; }
+  if(!fitRunning) pushUndo();
+  runFit(obj);
+});
+// Laplacian relax: each free vert eases toward its neighbours' average — no reference
+// needed, so it's the tool for rounding out geometry Subdivide just added resolution to.
+// Locked verts anchor the shape exactly like they do for Fit.
+function smoothIteration(vis, adj, sym, step){
+  const next=new Map();
+  for(const vi of vis){
+    if(lockedVerts.has(vi)) continue;
+    const nb=adj.get(vi); if(!nb||!nb.size) continue;
+    const p=state.verts[vi]; let sx=0,sy=0,sz=0;
+    for(const q of nb){ const w=state.verts[q]; sx+=w[0]; sy+=w[1]; sz+=w[2]; }
+    const n=nb.size;
+    next.set(vi, [ p[0]+(sx/n-p[0])*step, p[1]+(sy/n-p[1])*step, p[2]+(sz/n-p[2])*step ]);
+  }
+  for(const [vi,p] of next) state.verts[vi]=p;
+  applySymmetry(sym);
+}
+let smoothRunning=false;
+function runSmooth(obj){
+  if(smoothRunning||!obj) return;
+  smoothRunning=true;
+  const vis=[...objectTriVerts(obj)], adj=objAdjacency(obj);
+  const sym=computeSymPairs(obj);
+  let it=0; const N=12;
+  (function step(){
+    smoothIteration(vis, adj, sym, 0.5);
+    buildMesh(); updateVertsHi();
+    if(++it<N) requestAnimationFrame(step);
+    else {
+      refreshRings(obj);
+      for(const f of obj.faces) delete grabCache[f.name];
+      buildMesh(); updateVertsHi(); smoothRunning=false;
+    }
+  })();
+}
+document.getElementById('smoothBtn').addEventListener('click', ()=>{
+  const obj=selObject();
+  if(!obj){ document.getElementById('viewHint').textContent='Select a face of the object to smooth first.'; return; }
+  if(!smoothRunning) pushUndo();
+  runSmooth(obj);
+});
+
+function buildMesh(){                            // rebuild render mesh + atlas from the scene objects
+  if(mesh){ scene.remove(mesh); mesh.geometry.dispose(); mesh=null; }
+  faceHi=null;
+  hoverHi=null; hoverFace=null;
+  editHi=null; hoverTriHi=null; hoverTriIdx=-1;
+  const model=sceneModel(); state.model=model;
+  state.atlas=computeAtlas(model);
+  document.getElementById('decStats').textContent = state.decStats
+    ? `${state.decStats.src.toLocaleString()} → ${state.decStats.tris.toLocaleString()} tris · ${state.decStats.regions} regions`
+      + (state.decStats.regions>512 ? ' — raise Merge for fewer, larger cells' : '') : '';
+  const asm=assemble(model); cur=asm;
+  const uv=asm.geometry.getAttribute('uv');
+  for(let t=0;t<asm.triMeta.length;t++){ const m=asm.triMeta[t], cell=state.atlas.cells[model.faces[m.face].name];
+    for(let k=0;k<3;k++){ const [u,v]=cell.uvByVi[m.vi[k]]; uv.setXY(t*3+k, u, 1-v); } }
+  uv.needsUpdate=true;
+  renderAtlas();
+  if(atlasTex) atlasTex.dispose();
+  atlasTex=new THREE.CanvasTexture(atlasCanvas);
+  atlasTex.magFilter=THREE.NearestFilter; atlasTex.minFilter=THREE.NearestFilter; atlasTex.needsUpdate=true;
+  const mat=new THREE.MeshLambertMaterial({map:atlasTex, side:THREE.DoubleSide});
+  mesh=new THREE.Mesh(asm.geometry, mat); mesh.scale.set(...state.scale); scene.add(mesh);
+  highlightFace();
+  renderEditHi();
+}
+function ringLines(face,color){
+  const pos=[], ring=face.ring.map(vi=>state.model.verts[vi]);
+  for(let i=0;i<ring.length;i++){ const a=ring[i],b=ring[(i+1)%ring.length]; pos.push(...a,...b); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  return new THREE.LineSegments(g, new THREE.LineBasicMaterial({color}));
+}
+// a region has no ring of its own — trace its stored local-basis polygon back onto the
+// parent face's plane instead
+function regionLines(parentFace,poly,color){
+  const B=faceBasis(parentFace.ring.map(vi=>state.verts[vi]));
+  const pts=poly.map(p=>unproj2(p,B)), pos=[];
+  for(let i=0;i<pts.length;i++){ const a=pts[i],b=pts[(i+1)%pts.length]; pos.push(...a,...b); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  return new THREE.LineSegments(g, new THREE.LineBasicMaterial({color}));
+}
+function highlightFace(){
+  if(faceHi){ mesh&&mesh.remove(faceHi); faceHi.geometry.dispose(); faceHi.material.dispose(); faceHi=null; }
+  if(!state.selFace||!mesh||!state.model) return;
+  const owner=regionOwner(state.selFace);
+  if(owner){ faceHi=regionLines(owner.face,owner.region.poly,0xffe14d); mesh.add(faceHi); return; }
+  const face=state.model.faces.find(f=>f.name===state.selFace); if(!face) return;
+  faceHi=ringLines(face,0xffe14d); mesh.add(faceHi);
+}
+// hover preview — outlined on the model and in the atlas (works from either side)
+function setHover(name){
+  renderer.domElement.style.cursor = name?'pointer':'';
+  if(name===state.selFace) name=null;
+  if(name===hoverFace) return;
+  hoverFace=name;
+  if(hoverHi){ mesh&&mesh.remove(hoverHi); hoverHi.geometry.dispose(); hoverHi.material.dispose(); hoverHi=null; }
+  if(name&&mesh){
+    const owner=regionOwner(name);
+    if(owner) hoverHi=regionLines(owner.face,owner.region.poly,0x7f9dd8);
+    else { const face=state.model.faces.find(f=>f.name===name); if(face) hoverHi=ringLines(face,0x7f9dd8); }
+    if(hoverHi) mesh.add(hoverHi);
+  }
+  renderAtlasView();
+}
+// edit-mode overlays: wireframe of the selected face's tris + the hovered tri
+function triLines(tris,color){
+  const pos=[];
+  for(const t of tris) for(let e=0;e<3;e++){ const a=state.model.verts[t[e]], b=state.model.verts[t[(e+1)%3]]; pos.push(...a,...b); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  const ls=new THREE.LineSegments(g, new THREE.LineBasicMaterial({color}));
+  ls.scale.set(1.003,1.003,1.003);             // sit just above the surface
+  return ls;
+}
+function renderEditHi(){
+  if(editHi){ mesh&&mesh.remove(editHi); editHi.geometry.dispose(); editHi.material.dispose(); editHi=null; }
+  if(!state.editMode||!state.selFace||!mesh) return;
+  const face=state.model.faces.find(f=>f.name===state.selFace); if(!face) return;
+  editHi=triLines(face.tris,0xffe14d); mesh.add(editHi);
+}
+function setHoverTri(rt){
+  if(hoverTriHi){ mesh&&mesh.remove(hoverTriHi); hoverTriHi.geometry.dispose(); hoverTriHi.material.dispose(); hoverTriHi=null; }
+  hoverTriIdx=rt;
+  if(rt<0||!mesh||!cur) return;
+  hoverTriHi=triLines([cur.triMeta[rt].vi],0x7f9dd8); mesh.add(hoverTriHi);
+}
+
+// ------------------------------------------------------------------ face selection
+const raycaster=new THREE.Raycaster(); let downXY=null, moved=false;
+function renderTriAt(e){
+  if(!mesh||!cur) return -1;
+  const r=renderer.domElement.getBoundingClientRect();
+  const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
+  raycaster.setFromCamera(ndc,cam); const hits=raycaster.intersectObject(mesh,false);
+  return hits.length? hits[0].faceIndex : -1;
+}
+function faceAt(e){
+  if(!mesh||!cur) return null;
+  const r=renderer.domElement.getBoundingClientRect();
+  const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
+  raycaster.setFromCamera(ndc,cam); const hits=raycaster.intersectObject(mesh,false);
+  if(!hits.length) return null;
+  const face=state.model.faces[cur.triMeta[hits[0].faceIndex].face];
+  if(face.regions&&face.regions.length){
+    const B=faceBasis(face.ring.map(vi=>state.verts[vi]));
+    const p2=proj2([hits[0].point.x,hits[0].point.y,hits[0].point.z],B);
+    for(let i=face.regions.length-1;i>=0;i--) if(pip(p2, face.regions[i].poly)) return face.regions[i].name;
+  }
+  return face.name;
+}
+renderer.domElement.addEventListener('pointerdown', e=>{ downXY=[e.clientX,e.clientY]; moved=false; });
+renderer.domElement.addEventListener('pointermove', e=>{
+  if(boxSelStart){ drawBoxSel(e); return; }
+  if(vHit>=0 && downXY){                         // vertex drag (verts mode)
+    if(Math.abs(e.clientX-downXY[0])+Math.abs(e.clientY-downXY[1])>3) vDragging=true;
+    if(vDragging) vertDragMove(e);
+    return;
+  }
+  if(downXY){ if(Math.abs(e.clientX-downXY[0])+Math.abs(e.clientY-downXY[1])>4){ moved=true; setHover(null); setHoverTri(-1); } return; }
+  if(state.editMode){ setHover(null);
+    const rt=renderTriAt(e); renderer.domElement.style.cursor=rt>=0?'crosshair':'';
+    if(rt!==hoverTriIdx) setHoverTri(rt); return; }
+  if(state.mode==='verts'){
+    setHover(null);
+    if(addVertMode){ const h=pickEdge(e); updateEdgeMark(h); renderer.domElement.style.cursor=h?'copy':''; return; }
+    if(vertSelMode){ renderer.domElement.style.cursor=pickVert(e)>=0?'pointer':'crosshair'; return; }
+    renderer.domElement.style.cursor=pickVert(e)>=0?'grab':''; return; }
+  setHover(faceAt(e));
+});
+renderer.domElement.addEventListener('pointerleave', ()=>{ setHover(null); setHoverTri(-1); });
+renderer.domElement.addEventListener('pointerup', e=>{
+  if(boxSelStart){                                // finish a drag-box vertex selection
+    const rect=boxSelRectFrom(e), r=renderer.domElement.getBoundingClientRect(), v=new THREE.Vector3();
+    for(const vi of vertsList){                    // same screen-space projection pickVert uses, tested against the box instead of a point
+      const p=state.verts[vi]; v.set(p[0],p[1],p[2]).project(cam);
+      const sx=(v.x+1)/2*r.width, sy=(1-v.y)/2*r.height;
+      if(sx>=rect.x0 && sx<=rect.x1 && sy>=rect.y0 && sy<=rect.y1) vertSel.add(vi);
+    }
+    boxSelStart=null; drawBoxSel(null); ctrl.enabled=true; downXY=null;
+    updateSelBtns(); updateVertsHi();
+    return;
+  }
+  if(vHit>=0){                                   // finish vertex drag or toggle a lock
+    const vi=vHit, symP=vSymP; vHit=-1; vSymP=[null,null,null]; ctrl.enabled=true; downXY=null;
+    if(pendingVertSnap){ pushUndo(pendingVertSnap); pendingVertSnap=null; }
+    if(vDragging){ vDragging=false; vertDragEnd(); }
+    else {
+      const on=!lockedVerts.has(vi);
+      const set=(i)=>{ if(on) lockedVerts.add(i); else lockedVerts.delete(i); };
+      set(vi);
+      for(const p2 of symP) if(p2!==null&&p2!==vi) set(p2);   // locks mirror too
+      updateVertsHi();
+    }
+    return;
+  }
+  const wasClick=downXY&&!moved; downXY=null; if(!wasClick) return;
+  if(state.mode==='verts' && addVertMode){
+    const h=pickEdge(e);
+    if(h){
+      pushUndo();
+      const obj=selObject();
+      for(let ax=0;ax<3;ax++){                   // split the mirrored edge too
+        if(!state.sym['xyz'[ax]]||!obj) continue;
+        const a2=symPartnerOf(obj,h.a,ax), b2=symPartnerOf(obj,h.b,ax);
+        if(a2===null||b2===null) continue;
+        const same=(a2===h.a&&b2===h.b)||(a2===h.b&&b2===h.a);
+        if(!same) splitEdge(a2,b2,h.t);
+      }
+      splitEdge(h.a,h.b,h.t);
+      updateEdgeMark(null); buildMesh(); updateVertsHi();
+    }
+    return;
+  }
+  if(state.mode==='verts' && vertSelMode){
+    const vi=pickVert(e);
+    if(vi>=0){ if(vertSel.has(vi)) vertSel.delete(vi); else vertSel.add(vi); updateSelBtns(); updateVertsHi(); }
+    return;
+  }
+  if(state.mode==='move' && tc.axis) return;     // click landed on the gizmo
+  if(state.editMode){ const rt=renderTriAt(e); if(rt>=0){ pushUndo(); editToggleTri(rt); } return; }
+  const name=faceAt(e); if(name) selectFace(name);
+});
+function cellAt(e){
+  const r=atlasDisp.getBoundingClientRect();
+  const px=(e.clientX-r.left)/r.width, py=(e.clientY-r.top)/r.height;
+  const col=Math.floor(px*state.atlas.cols), row=Math.floor(py*state.atlas.rows);
+  const i=row*state.atlas.cols+col;
+  if(!(col>=0&&col<state.atlas.cols&&row>=0&&i<state.model.faces.length)) return null;
+  const face=state.model.faces[i], regions=face.regions||[];
+  for(let k=regions.length-1;k>=0;k--){                     // most-recently-drawn region wins on overlap
+    const c=state.atlas.cells[regions[k].name];
+    if(c && pip([px,py], c.poly2D)) return regions[k].name;
+  }
+  return face.name;
+}
+atlasDisp.addEventListener('click', e=>{ const n=cellAt(e); if(n) selectFace(n); });
+atlasDisp.addEventListener('pointermove', e=>setHover(cellAt(e)));
+atlasDisp.addEventListener('pointerleave', ()=>setHover(null));
+// The mutable source-of-truth face (state.objects, not state.model — the
+// latter is rebuilt fresh by sceneModel()/buildMesh() every call and isn't
+// what carAutoLivery's resolveFaceKind(face) reads from).
+function objFaceByName(name){
+  for(const o of state.objects) for(const f of o.faces) if(f.name===name) return f;
+  return null;
+}
+function selectFace(name){
+  state.selFace=name; document.getElementById('selName').textContent=name;
+  const isRegion=!!regionOwner(name);
+  document.getElementById('subFaceBtn').hidden=isRegion;
+  document.getElementById('subFaceMode').hidden=isRegion;
+  document.getElementById('flattenBtn').hidden=isRegion;
+  document.getElementById('delObjBtn').hidden=isRegion;
+  document.getElementById('delRegionBtn').hidden=!isRegion;
+  const objFace=objFaceByName(name);
+  const kindRow=document.getElementById('panelKindRow');
+  kindRow.hidden = isRegion || !objFace || /Right Side|Left Side/.test(name);
+  if(!kindRow.hidden){
+    const sel=document.getElementById('panelKind');
+    const detected=inferFaceKind(name);
+    sel.options[0].textContent = detected ? `Auto (detected: ${detected})` : 'Auto (none detected)';
+    sel.value = objFace.kind ?? '';
+  }
+  const fill=state.fills[name];
+  document.getElementById('fillType').querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.t===(fill?fill.type:'')));
+  document.getElementById('flatRow').hidden = !(fill&&fill.type==='flat');
+  document.getElementById('photoBlock').hidden = !(fill&&fill.type==='photo');
+  if(fill&&fill.type==='flat') document.getElementById('flatCol').value=fill.color;
+  if(fill&&fill.type==='photo'){
+    if(fill.photo && fill.photo!==state.photo){ state.photo=fill.photo; layoutPhoto(); }  // show this face's own photo
+    document.getElementById('noPhoto').hidden=!!state.photo;
+    ensureSrc(name); drawPhotoOverlay();
+    if(!fill.sty) fill.sty={...state.sty};
+    styRes.value=sliderFromRes(fill.sty.size); styResV.textContent=fill.sty.size+'px';   // panel mirrors this face's settings
+    styColors.value=fill.sty.colors; styColorsV.textContent=fill.sty.colors;
+    styDither.checked=fill.sty.dither;
+    styAmt.value=fill.sty.ditherAmt;
+    document.getElementById('flipBtn').textContent = fill.flip?'⇋ Flip ✓':'⇋ Flip'; }
+  highlightFace(); renderAtlasView(); renderEditHi();
+  if(state.mode==='move') attachGizmo();
+  if(state.mode==='verts') updateVertsHi();
+}
+
+// ------------------------------------------------------------------ face editing
+// move triangles between faces to refine the automatic regions, or found new faces
+let editNewFace=false;
+const prevOwner={};                              // triKey -> face the tri was taken from
+const triKey=t=>t.slice().sort((a,b)=>a-b).join('_');
+const EDIT_HINT='Click triangles on the model: outside the selected face = add · inside = remove. Pick faces via the atlas while editing.';
+function setEditMode(onOff){
+  state.editMode=onOff;
+  if(!onOff) editNewFace=false;
+  renderer.domElement.style.cursor='';
+  setHoverTri(-1); renderEditHi();
+}
+document.getElementById('newFaceBtn').addEventListener('click', ()=>{
+  if(!state.model||!state.model.faces.length) return;
+  setMode('tris'); editNewFace=true;
+  document.getElementById('viewHint').textContent='Click a triangle to found the new face.';
+});
+document.getElementById('delObjBtn').addEventListener('click', ()=>{
+  if(!state.selFace) return;
+  const face=state.model.faces.find(f=>f.name===state.selFace); if(!face) return;
+  const obj=objectOfFace(face); if(!obj) return;
+  pushUndo();
+  detachGizmo(); dropObject(obj); clearSelection(); buildMesh();
+});
+document.getElementById('delRegionBtn').addEventListener('click', ()=>{
+  const owner=regionOwner(state.selFace); if(!owner) return;
+  pushUndo();
+  const i=owner.face.regions.indexOf(owner.region); owner.face.regions.splice(i,1);
+  delete state.fills[owner.region.name]; delete grabCache[owner.region.name];
+  clearSelection(); buildMesh();
+});
+let subFaceMode='grid';
+document.getElementById('subFaceMode').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  subFaceMode=b.dataset.m;
+  e.currentTarget.querySelectorAll('button').forEach(x=>x.classList.toggle('on', x===b));
+});
+document.getElementById('subFaceBtn').addEventListener('click', ()=>{
+  if(!state.selFace||!state.model) return;
+  const face=state.model.faces.find(f=>f.name===state.selFace); if(!face) return;
+  const partners=findMirrorPartners(face);   // captured BEFORE the boundary loop changes shape
+  pushUndo();
+  // Grid only means anything for a 4-cornered face; on anything else, prefer Strip over an
+  // outright refusal — a starburst Wheel is the last resort, not the default fallback
+  const ok = subFaceMode==='grid' ? (subdivideFaceGrid(face)||subdivideFaceStrip(face)||subdivideFace(face))
+    : subFaceMode==='strip' ? (subdivideFaceStrip(face)||subdivideFace(face))
+    : subdivideFace(face);
+  if(!ok){ undoStack.pop(); updateUndoButtons(); return; }
+  const usedMode = face.grid ? 'grid' : face.strip ? 'strip' : 'wheel';
+  for(const p of partners) mirrorSubdivideFace(face, p, usedMode);
+  buildMesh(); updateVertsHi();
+});
+document.getElementById('flattenBtn').addEventListener('click', ()=>{
+  if(!state.selFace||!state.model) return;
+  const face=state.model.faces.find(f=>f.name===state.selFace); if(!face) return;
+  pushUndo();
+  if(!flattenFace(face)){ undoStack.pop(); updateUndoButtons(); return; }
+  const obj=objectOfFace(face); if(obj) refreshRings(obj);
+  delete grabCache[face.name];
+  buildMesh(); updateVertsHi();
+});
+function findTriIndex(face,vi){ return face.tris.findIndex(t=>t[0]===vi[0]&&t[1]===vi[1]&&t[2]===vi[2]); }
+function customName(){
+  const used=new Set(state.model.faces.map(f=>f.name));
+  for(const f of state.model.faces) for(const r of f.regions||[]) used.add(r.name);
+  let n=1; while(used.has('Custom '+n)) n++; return 'Custom '+n;
+}
+// removal destination when we don't know where a tri came from: the face it shares the
+// longest boundary with
+function bestNeighborFace(vi, exclName){
+  const V=state.model.verts;
+  const keys=[], lens=[];
+  for(let e=0;e<3;e++){ const a=vi[e], b=vi[(e+1)%3];
+    keys.push(a<b? a+'_'+b : b+'_'+a);
+    lens.push(Math.hypot(V[a][0]-V[b][0], V[a][1]-V[b][1], V[a][2]-V[b][2])); }
+  let best=null, bl=-1;
+  for(const f of state.model.faces){
+    if(f.name===exclName) continue;
+    let s=0;
+    for(const t of f.tris) for(let e=0;e<3;e++){ const a=t[e], b=t[(e+1)%3];
+      const k=a<b? a+'_'+b : b+'_'+a; const i=keys.indexOf(k); if(i>=0) s+=lens[i]; }
+    if(s>bl && s>0){ bl=s; best=f; }
+  }
+  return best;
+}
+function editToggleTri(rt){
+  const model=state.model, meta=cur.triMeta[rt], owner=model.faces[meta.face], vi=meta.vi;
+  if(editNewFace){                               // first click founds the new face
+    const j=findTriIndex(owner,vi); if(j<0) return;
+    owner.tris.splice(j,1);
+    prevOwner[triKey(vi)]=owner.name;
+    const face={ name:customName(), ring:null, tris:[vi.slice()] };
+    objectOfFace(owner).faces.push(face);        // new face lives in the seed tri's object
+    editNewFace=false;
+    document.getElementById('viewHint').textContent=EDIT_HINT;
+    state.selFace=face.name;
+    finishEdit([owner,face]);
+    selectFace(face.name);
+    return;
+  }
+  const sel=model.faces.find(f=>f.name===state.selFace); if(!sel) return;
+  if(owner===sel){                               // remove: back where it came from, else best neighbour
+    const j=findTriIndex(sel,vi); if(j<0) return;
+    const prev=prevOwner[triKey(vi)];
+    let dest=prev&&model.faces.find(f=>f.name===prev&&f!==sel);
+    if(!dest) dest=bestNeighborFace(vi, sel.name);
+    sel.tris.splice(j,1);
+    if(!dest){ dest={ name:customName(), ring:null, tris:[] }; objectOfFace(sel).faces.push(dest); }
+    dest.tris.push(vi.slice());
+    finishEdit([sel,dest]);
+  } else {                                       // add to the selected face
+    const j=findTriIndex(owner,vi); if(j<0) return;
+    prevOwner[triKey(vi)]=owner.name;
+    owner.tris.splice(j,1);
+    sel.tris.push(vi.slice());
+    finishEdit([owner,sel]);
+  }
+}
+function finishEdit(affected){
+  for(const f of affected){
+    delete f.grid; delete f.strip;                 // tri-editing invalidates any tracked subdivide grid/strip
+    const obj=objectOfFace(f);
+    if(!f.tris.length){                          // emptied faces disappear
+      if(obj) obj.faces.splice(obj.faces.indexOf(f),1);
+      dropFaceAux(f);
+      if(obj&&!obj.faces.length) dropObject(obj); // emptied objects too
+    } else {
+      f.ring=faceRectRing(state.verts,f.tris);   // outline follows the new tri set
+      delete grabCache[f.name];
+    }
+  }
+  buildMesh();                                   // fills persist by name; grabs re-project into the new cells
+}
+
+// ------------------------------------------------------------------ photo + selector
+const photo=document.getElementById('photo'), photoOv=document.getElementById('photoOv'), photoWrap=document.getElementById('photoWrap');
+const PHOTO_W_DEFAULT=340; let photoScale=1;
+// zoom/pan is a transient VIEW into state.photo, not saved per fill — picking precisely on a
+// small detail needs to zoom in, but which face is selected while doing that shouldn't matter,
+// so the view only resets when the underlying photo canvas itself changes (a new load, or
+// switching to a face grabbed from a different photo), tracked via photoZoomFor
+let photoZoom=1, photoOriginX=0, photoOriginY=0, photoZoomFor=null;
+const PHOTO_ZOOM_MAX=16;
+function loadPhotoFile(f){
+  const img=new Image();
+  img.onload=()=>{ pushUndo(); const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight;
+    c.getContext('2d').drawImage(img,0,0); state.photo=c; layoutPhoto();
+    document.getElementById('noPhoto').hidden=true;
+    if(state.selFace){
+      if(!state.fills[state.selFace]||state.fills[state.selFace].type!=='photo') setPhotoFill(state.selFace);
+      const fill=state.fills[state.selFace];
+      fill.photo=c; fill.src=null; fill.rot=0; fill.flip=false;   // a genuinely new photo needs a fresh, in-bounds placement — the old handles were sized for the old photo's pixels and can land anywhere (even off-canvas) on one with different dimensions
+      ensureSrc(state.selFace);
+      regrab(state.selFace); renderAtlas(); selectFace(state.selFace); }
+  };
+  img.src=URL.createObjectURL(f);
+}
+document.getElementById('photoBtn').addEventListener('click', ()=>document.getElementById('file').click());
+document.getElementById('file').addEventListener('change', e=>{
+  if(e.target.files[0]) loadPhotoFile(e.target.files[0]); e.target.value='';
+});
+// display width tracks the actual panel space instead of a fixed 340px — the panel is wide
+// enough now that a fixed size left most of it empty, and the photo/handles stayed cramped
+function photoTargetWidth(){
+  return Math.max(160, Math.round(photoWrap.clientWidth || PHOTO_W_DEFAULT));
+}
+// canvas pixel size is fixed by the FIT view (whole photo, panel-width-driven) regardless of
+// zoom level — zoom only changes how much of the source photo that same fixed viewport crops
+// into, so resizing the panel/window never fights with an in-progress zoom
+function layoutPhoto(){
+  if(!state.photo) return; const c=state.photo;
+  if(c!==photoZoomFor){ photoZoom=1; photoOriginX=0; photoOriginY=0; photoZoomFor=c; }
+  const dw=photoTargetWidth(); photoScale=dw/c.width;
+  const dh=Math.round(c.height*photoScale);
+  photo.width=dw; photo.height=dh; photoOv.width=dw; photoOv.height=dh;
+  drawPhotoCanvas();
+}
+function drawPhotoCanvas(){
+  const c=state.photo; if(!c) return;
+  const dw=photo.width, dh=photo.height, effScale=photoScale*photoZoom;
+  const sw=dw/effScale, sh=dh/effScale;
+  photoOriginX=Math.max(0,Math.min(c.width-sw, photoOriginX));
+  photoOriginY=Math.max(0,Math.min(c.height-sh, photoOriginY));
+  const g=photo.getContext('2d'); g.clearRect(0,0,dw,dh);
+  g.drawImage(c, photoOriginX,photoOriginY,sw,sh, 0,0,dw,dh);
+  document.getElementById('photoZoomV').textContent=Math.round(photoZoom*100)+'%';
+}
+function setPhotoZoom(z, aboutX, aboutY){                        // aboutX/Y: display px to hold fixed under the cursor (or canvas center)
+  if(!state.photo) return;
+  if(aboutX===undefined){ aboutX=photo.width/2; aboutY=photo.height/2; }
+  const before=pToFull(aboutX,aboutY);
+  photoZoom=Math.max(1,Math.min(PHOTO_ZOOM_MAX,z));
+  const effScale=photoScale*photoZoom;
+  photoOriginX=before.x-aboutX/effScale; photoOriginY=before.y-aboutY/effScale;
+  drawPhotoCanvas(); drawPhotoOverlay();
+}
+new ResizeObserver(()=>{ layoutPhoto(); drawPhotoOverlay(); }).observe(photoWrap);
+document.getElementById('photoZoomIn').addEventListener('click', ()=>setPhotoZoom(photoZoom*1.5));
+document.getElementById('photoZoomOut').addEventListener('click', ()=>setPhotoZoom(photoZoom/1.5));
+document.getElementById('photoZoomReset').addEventListener('click', ()=>{
+  photoZoom=1; photoOriginX=0; photoOriginY=0; drawPhotoCanvas(); drawPhotoOverlay();
+});
+photoWrap.addEventListener('wheel', e=>{
+  if(!state.photo) return;
+  e.preventDefault();
+  const r=photoOv.getBoundingClientRect();
+  setPhotoZoom(photoZoom*Math.exp(-e.deltaY*0.0015), e.clientX-r.left, e.clientY-r.top);
+},{passive:false});
+function ensureSrc(name){
+  const fill=state.fills[name]; if(!fill||fill.type!=='photo'||fill.src) return;
+  const ph=fill.photo||state.photo; if(!ph) return;
+  fill.photo=ph;
+  const shape=state.atlas.cells[name].shape2D;                 // seed selector shaped like the face
+  const placed=placePoly(shape, 0,0, ph.width, ph.height, 0.22);
+  fill.src=placed.map(([x,y])=>({x,y}));
+}
+function pToDisp(p){ const s=photoScale*photoZoom; return {x:(p.x-photoOriginX)*s, y:(p.y-photoOriginY)*s}; }
+function pToFull(x,y){ const s=photoScale*photoZoom; return {x:x/s+photoOriginX, y:y/s+photoOriginY}; }
+// centroid of the capture polygon, in full-res photo pixels — the pivot every rigid
+// transform (whole-shape drag, rotate+scale handle) works around
+function srcCentroid(src){
+  let cx=0,cy=0; for(const p of src){ cx+=p.x; cy+=p.y; } return {x:cx/src.length, y:cy/src.length};
+}
+// home position of the rotate+scale handle: corner 0, pushed 35% further out from the
+// centroid so it sits clear of the corner pin itself and is easy to grab separately
+function rotHandlePos(src){
+  const c=srcCentroid(src), p0=src[0];
+  return {x:c.x+(p0.x-c.x)*1.35, y:c.y+(p0.y-c.y)*1.35};
+}
+function drawPhotoOverlay(){
+  const g=photoOv.getContext('2d'); g.clearRect(0,0,photoOv.width,photoOv.height);
+  const fill=state.selFace&&state.fills[state.selFace];
+  if(!fill||fill.type!=='photo'||!fill.src) return;
+  const pts=fill.src.map(pToDisp);
+  g.strokeStyle='#3ef07a'; g.lineWidth=2; g.beginPath();
+  pts.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y)); g.closePath(); g.stroke();
+  pts.forEach((p,i)=>{ g.fillStyle='#ff4d4d'; g.beginPath(); g.arc(p.x,p.y,6,0,7); g.fill();
+    g.fillStyle='#ffe14d'; g.font='11px sans-serif'; g.fillText(String(i+1), p.x+8, p.y-8); });
+  // rotate+scale handle — a line from the centroid out to a small blue diamond; dragging it
+  // rigidly rotates and uniformly scales the WHOLE capture around the centroid together
+  // (angle and distance both track the cursor), keeping every corner's relative position
+  // intact so a well-aligned shape can be repositioned without any per-corner skew creeping in
+  const c=pToDisp(srcCentroid(fill.src)), rh=pToDisp(rotHandlePos(fill.src));
+  g.strokeStyle='#7f9dd8'; g.lineWidth=1.5; g.beginPath(); g.moveTo(c.x,c.y); g.lineTo(rh.x,rh.y); g.stroke();
+  g.fillStyle='#3a6df0'; g.beginPath();
+  g.save(); g.translate(rh.x,rh.y); g.rotate(Math.PI/4); g.fillRect(-6,-6,12,12); g.restore();
+}
+let pdrag=-1, panStart=null, bodyDrag=null, rotDrag=null;
+photoOv.addEventListener('pointerdown', e=>{
+  if(!state.photo) return;
+  const fill=state.selFace&&state.fills[state.selFace];
+  const r=photoOv.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
+  if(fill&&fill.type==='photo'&&fill.src){
+    const rh=pToDisp(rotHandlePos(fill.src));
+    if(Math.hypot(rh.x-x,rh.y-y)<10){
+      pushUndo(); photoOv.setPointerCapture(e.pointerId);
+      const c=srcCentroid(fill.src);
+      rotDrag={c, v0:{x:rh.x-pToDisp(c).x, y:rh.y-pToDisp(c).y}, orig:fill.src.map(p=>({...p}))};
+      return;
+    }
+    for(let i=0;i<fill.src.length;i++){ const d=pToDisp(fill.src[i]); if(Math.hypot(d.x-x,d.y-y)<12){
+      pushUndo(); pdrag=i; photoOv.setPointerCapture(e.pointerId); return; } }
+    if(pip([x,y], fill.src.map(p=>{ const d=pToDisp(p); return [d.x,d.y]; }))){  // inside the shape but no handle hit — move it as one rigid piece
+      pushUndo(); photoOv.setPointerCapture(e.pointerId); photoOv.style.cursor='move';
+      bodyDrag={x,y,orig:fill.src.map(p=>({...p}))};
+      return;
+    }
+  }
+  panStart={x,y,ox:photoOriginX,oy:photoOriginY};                // missed everything — pan the photo instead
+  photoOv.setPointerCapture(e.pointerId); photoOv.style.cursor='grabbing';
+});
+photoOv.addEventListener('pointermove', e=>{
+  const r=photoOv.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
+  if(pdrag>=0){
+    state.fills[state.selFace].src[pdrag]=pToFull(x,y);
+    drawPhotoOverlay(); regrab(state.selFace); renderAtlas();
+    return;
+  }
+  if(bodyDrag){
+    const s=photoScale*photoZoom, dx=(x-bodyDrag.x)/s, dy=(y-bodyDrag.y)/s;
+    state.fills[state.selFace].src=bodyDrag.orig.map(p=>({x:p.x+dx, y:p.y+dy}));
+    drawPhotoOverlay(); regrab(state.selFace); renderAtlas();
+    return;
+  }
+  if(rotDrag){
+    const m=pToFull(x,y), cd=pToDisp(rotDrag.c), v={x:x-cd.x, y:y-cd.y};
+    const {v0}=rotDrag, denom=v0.x*v0.x+v0.y*v0.y;
+    if(denom>1e-6){
+      // v = v0 · (a+bi) solved for (a,b): the single complex ratio that rotates+scales
+      // v0 into v — applying it to every original point (relative to the centroid) moves
+      // the whole shape together, rigidly, in one motion
+      const a=(v.x*v0.x+v.y*v0.y)/denom, b=(v.y*v0.x-v.x*v0.y)/denom;
+      const {c, orig}=rotDrag;
+      state.fills[state.selFace].src=orig.map(p=>{
+        const dx=p.x-c.x, dy=p.y-c.y;
+        return { x:c.x+dx*a-dy*b, y:c.y+dx*b+dy*a };
+      });
+      drawPhotoOverlay(); regrab(state.selFace); renderAtlas();
+    }
+    return;
+  }
+  if(panStart){
+    const s=photoScale*photoZoom;
+    photoOriginX=panStart.ox-(x-panStart.x)/s; photoOriginY=panStart.oy-(y-panStart.y)/s;
+    drawPhotoCanvas(); drawPhotoOverlay();
+  }
+});
+photoOv.addEventListener('pointerup', ()=>{ pdrag=-1; panStart=null; bodyDrag=null; rotDrag=null; photoOv.style.cursor='crosshair'; });
+
+// ------------------------------------------------------------------ fill controls
+function setFlatFill(name){ state.fills[name]={type:'flat', color:document.getElementById('flatCol').value}; delete grabCache[name]; }
+function setPhotoFill(name){ state.fills[name]={type:'photo', src:null, rot:0, flip:false, photo:state.photo, sty:{...state.sty}}; ensureSrc(name); }
+document.getElementById('panelKind').addEventListener('change', e=>{
+  if(!state.selFace) return;
+  const face=objFaceByName(state.selFace); if(!face) return;
+  pushUndo();
+  if(e.target.value) face.kind=e.target.value; else delete face.kind;
+  // Doesn't repaint on its own — Auto livery is already a deliberate,
+  // re-run-it-yourself operation (see its own button tooltip), same as
+  // changing colors; this just changes what the NEXT run will use.
+});
+document.getElementById('fillType').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b||!state.selFace) return;
+  pushUndo();
+  if(b.dataset.t==='flat'){ setFlatFill(state.selFace); }
+  else { setPhotoFill(state.selFace); }
+  selectFace(state.selFace); regrab(state.selFace); renderAtlas();
+});
+document.getElementById('flatCol').addEventListener('input', e=>{
+  if(state.selFace && state.fills[state.selFace] && state.fills[state.selFace].type==='flat'){
+    if(!colorGesture){ pushUndo(); colorGesture=true; }
+    state.fills[state.selFace].color=e.target.value; renderAtlas(); }
+});
+function photoFill(){ const f=state.selFace&&state.fills[state.selFace]; return (f&&f.type==='photo'&&f.src)?f:null; }
+document.getElementById('rotBtn').addEventListener('click', ()=>{ const f=photoFill(); if(!f) return;
+  pushUndo(); f.rot=((f.rot||0)+1)%f.src.length; regrab(state.selFace); renderAtlas(); });
+document.getElementById('flipBtn').addEventListener('click', e=>{ const f=photoFill(); if(!f) return;
+  pushUndo(); f.flip=!f.flip; e.currentTarget.textContent = f.flip?'⇋ Flip ✓':'⇋ Flip'; regrab(state.selFace); renderAtlas(); });
+const on=(id,fn)=>document.getElementById(id).addEventListener('input',fn);
+// stylize edits apply to the selected face only; state.sty just remembers the last-used
+// values so the next new photo fill starts from them. One undo snapshot per drag gesture
+// (styGesture), not per 'input' tick — reset by the page-wide pointerup listener above.
+function styEdit(mut){
+  if(!styGesture){ pushUndo(); styGesture=true; }
+  mut(state.sty);
+  const f=photoFill(); if(!f) return;
+  mut(f.sty);
+  regrab(state.selFace); renderAtlas();
+}
+on('styColors', e=>{ styColorsV.textContent=e.target.value; styEdit(s=>s.colors=+e.target.value); });
+document.getElementById('styDither').addEventListener('change', e=>{ styEdit(s=>s.dither=e.target.checked); });
+on('styAmt', e=>{ styEdit(s=>s.ditherAmt=+e.target.value); });
+const RES_MIN=8, RES_MAX=2048;                   // log slider: 8px chunks → native cell resolution
+const resFromSlider=p=>Math.round(Math.exp(Math.log(RES_MIN)+p/100*Math.log(RES_MAX/RES_MIN)));
+const sliderFromRes=r=>Math.round(100*Math.log(Math.max(RES_MIN,Math.min(RES_MAX,r))/RES_MIN)/Math.log(RES_MAX/RES_MIN));
+on('styRes', e=>{
+  const v=resFromSlider(+e.target.value);
+  styResV.textContent=v+'px';
+  styEdit(s=>s.size=v);
+  const ns=atlasSize(state.atlas.cols);
+  if(ns!==state.atlas.size){ state.atlas.size=ns; regrabAll(); renderAtlas(); }  // texel budget changed → atlas rescales
+});
+
+// ------------------------------------------------------------------ add / reference / modes
+document.getElementById('addSeg').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  pushUndo();
+  const obj=addObject(b.dataset.p, fixWinding(primitiveBase(b.dataset.p)));
+  selectFace(obj.faces[0].name);
+});
+on('sides', e=>{ state.sides=+e.target.value; sidesV.textContent=e.target.value; });
+// the decimated reference becomes an ordinary scene object ("Model N · Region k")
+function runDecimate(){
+  if(!state.source) return;
+  const old=state.objects.find(o=>o.kind==='decimated');
+  if(old){ detachGizmo(); dropObject(old); }
+  addObject('decimated', externalModel(), 'Model');
+}
+// shared tail for both loaders below: adopt a freshly-parsed mesh as the decimation
+// reference (ghosted, fit-to-ghost target) — never editable faces/fills, same role .obj
+// reference loading already had
+function applyReferenceSource(src){
+  if(!src){ alert('No mesh found in that file.'); return; }
+  state.source=src;
+  state.decimate.target=Math.min(1500, Math.floor(src.index.length/3));  // PS1-ish default budget
+  state.decimate.angle=+decAngle.value; state.decimate.absorb=+decAbsorb.value;
+  decSliderSet(state.decimate.target);
+  document.getElementById('decBar').hidden=false;
+  buildGhost();
+  buildRefHash();
+  runDecimate();
+  decEstimate();
+}
+async function loadObjFile(f){
+  const btn=document.getElementById('loadObjBtn');
+  btn.textContent='Loading…';
+  try{
+    const text=await f.text();
+    await MeshoptSimplifier.ready;
+    applyReferenceSource(prepareSource(new OBJLoader().parse(text)));
+  } finally { btn.textContent='Load ref…'; }
+}
+// .gltf (JSON, base64-embedded buffers/images — this app's own Export .gltf produces
+// exactly that, so re-loading a scene you exported earlier works) and .glb (binary,
+// self-contained) both parse without needing any external files, same one-shot flow as .obj
+async function loadGltfFile(f){
+  const btn=document.getElementById('loadObjBtn');
+  btn.textContent='Loading…';
+  try{
+    const data = /\.glb$/i.test(f.name) ? await f.arrayBuffer() : await f.text();
+    await MeshoptSimplifier.ready;
+    const gltf=await new Promise((res,rej)=>new GLTFLoader().parse(data,'',res,rej));
+    applyReferenceSource(prepareSource(gltf.scene));
+  } catch(err){ console.error(err); alert('Could not load that file — see console.'); }
+  finally { btn.textContent='Load ref…'; }
+}
+function loadReferenceFile(f){
+  if(/\.(gltf|glb)$/i.test(f.name)) loadGltfFile(f);
+  else loadObjFile(f);
+}
+document.getElementById('loadObjBtn').addEventListener('click', ()=>document.getElementById('objFile').click());
+document.getElementById('objFile').addEventListener('change', e=>{
+  if(e.target.files[0]) loadReferenceFile(e.target.files[0]); e.target.value='';
+});
+// drop a .obj/.gltf/.glb or an image anywhere
+addEventListener('dragover', e=>e.preventDefault());
+addEventListener('drop', e=>{
+  e.preventDefault(); const f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(!f) return;
+  if(/\.(obj|gltf|glb)$/i.test(f.name)) loadReferenceFile(f);
+  else if(/\.json$/i.test(f.name)) loadProjectFile(f);   // .forge.json project (see project save/load)
+  else if(f.type.startsWith('image/')) loadPhotoFile(f);
+});
+
+// ------------------------------------------------------------------ mode toolbar
+const HINTS={
+  select:'Hover a face to preview · click to select · drag to orbit · scroll to zoom · drop a .obj/.gltf/.glb or image anywhere',
+  move:'Drag the gizmo to transform the selected object · click a face to pick another object · Esc to finish',
+  tris:EDIT_HINT,
+  verts:'Drag a vertex to move it · click a vertex to lock 🔒 / unlock it · ⬚ Select verts (click or drag a box), then ⛓ Merge or 🗑 Delete · ⊞ Subdivide adds a ring along a profile\'s depth · 🔒 Lock all locks every current vert (new verts stay free) · ▶ Fit pulls the free verts onto the ghost · 〜 Smooth relaxes them toward their neighbours (no reference needed) · Esc to finish',
+  profile:'Ortho view — click to outline a shape over the ghost · click the first point (or Enter) to close · Esc to cancel',
+  lasso:'Click to outline a shape over the model, as currently viewed · click the first point (or Enter) to close · paints a new region on whichever face it lands on, no geometry cut · Esc to cancel',
+};
+function setMode(m){
+  if(state.mode==='profile'&&m!=='profile') endProfile();
+  if(state.mode==='lasso'&&m!=='lasso') endLasso();
+  state.mode=m;
+  vHit=-1; vDragging=false;
+  document.querySelectorAll('#modeBar > button[data-m]').forEach(b=>b.classList.toggle('on', b.dataset.m===m));
+  document.getElementById('tcMode').hidden = m!=='move';
+  document.getElementById('fitBtn').hidden = m!=='verts';
+  document.getElementById('smoothBtn').hidden = m!=='verts';
+  document.getElementById('addVertBtn').hidden = m!=='verts';
+  document.getElementById('vertSelBtn').hidden = m!=='verts';
+  document.getElementById('symSeg').hidden = m!=='verts';
+  if(m!=='verts') setAddVert(false);
+  if(m!=='verts') setVertSelMode(false);
+  setEditMode(m==='tris');
+  if(m==='move') attachGizmo(); else detachGizmo();
+  if(m==='profile') startProfile();
+  if(m==='lasso') startLasso();
+  updateVertsHi();
+  document.getElementById('viewHint').textContent=HINTS[m];
+}
+document.getElementById('modeBar').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b||!b.dataset.m) return;
+  setMode(b.dataset.m===state.mode&&b.dataset.m!=='select'?'select':b.dataset.m);
+});
+addEventListener('keydown', e=>{
+  if(e.key==='Escape') setMode('select');
+  if(e.key==='Enter'&&state.mode==='profile'&&profilePts.length>=3) commitProfile();
+  if(e.key==='Enter'&&state.mode==='lasso'&&lassoPts.length>=3) commitLasso();
+  if(e.key==='Enter'&&vertSelMode&&vertSel.size>=2) commitMerge();
+  if((e.key==='Delete'||e.key==='Backspace')&&vertSelMode&&vertSel.size>=1){ e.preventDefault(); commitDelete(); }
+});
+
+// ------------------------------------------------------------------ profile draw → extrude
+// draw a 2D outline in an axis-snapped ortho view; extrusion depth is measured from the
+// ghost verts whose projection falls inside the outline
+let orthoCam=null, profilePts=[];
+const profOv=document.getElementById('profOv');
+function pip(pt, poly){                          // even-odd point-in-polygon
+  let c=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const a=poly[i], b=poly[j];
+    if((a[1]>pt[1])!==(b[1]>pt[1]) && pt[0] < (b[0]-a[0])*(pt[1]-a[1])/(b[1]-a[1])+a[0]) c=!c;
+  }
+  return c;
+}
+function startProfile(){
+  const d=new THREE.Vector3(); cam.getWorldDirection(d);
+  const ax=[Math.abs(d.x),Math.abs(d.y),Math.abs(d.z)], i=ax.indexOf(Math.max(...ax));
+  const N=new THREE.Vector3(); N.setComponent(i, Math.sign(d.getComponent(i))||1);      // snapped view direction
+  const up = i===1 ? new THREE.Vector3(0,0,Math.sign(d.y)) : new THREE.Vector3(0,1,0);
+  const dist=cam.position.distanceTo(ctrl.target);
+  const w=view.clientWidth||1, h=view.clientHeight||1;
+  const hh=Math.tan(cam.fov*Math.PI/360)*dist, hw=hh*w/h;
+  orthoCam=new THREE.OrthographicCamera(-hw,hw,hh,-hh,0.01,100);
+  orthoCam.position.copy(ctrl.target).addScaledVector(N,-Math.max(dist,4));
+  orthoCam.up.copy(up); orthoCam.lookAt(ctrl.target); orthoCam.updateMatrixWorld();
+  activeCam=orthoCam; ctrl.enabled=false;
+  profilePts=[];
+  profOv.hidden=false; profOv.width=w; profOv.height=h;
+  drawProfOv();
+}
+function endProfile(){
+  activeCam=cam; ctrl.enabled=true;
+  orthoCam=null; profilePts=[]; profOv.hidden=true;
+}
+function drawProfOv(mx,my){
+  const g=profOv.getContext('2d'); g.clearRect(0,0,profOv.width,profOv.height);
+  if(!profilePts.length) return;
+  g.strokeStyle='#3ef07a'; g.lineWidth=2; g.beginPath();
+  profilePts.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));
+  if(mx!==undefined) g.lineTo(mx,my);
+  g.stroke();
+  profilePts.forEach(([x,y],i)=>{ g.fillStyle=i?'#ff4d4d':'#ffe14d'; g.beginPath(); g.arc(x,y,i?4:6,0,7); g.fill(); });
+}
+profOv.addEventListener('pointerdown', e=>{
+  const r=profOv.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
+  if(profilePts.length>2 && Math.hypot(x-profilePts[0][0],y-profilePts[0][1])<12){ commitProfile(); return; }
+  profilePts.push([x,y]); drawProfOv();
+});
+profOv.addEventListener('pointermove', e=>{
+  const r=profOv.getBoundingClientRect(); drawProfOv(e.clientX-r.left, e.clientY-r.top);
+});
+function commitProfile(){
+  if(!orthoCam||profilePts.length<3) return;
+  pushUndo();
+  const w=profOv.width, h=profOv.height, O=ctrl.target.clone();
+  const U=new THREE.Vector3(), V=new THREE.Vector3(), B=new THREE.Vector3();
+  orthoCam.matrixWorld.extractBasis(U,V,B);      // camera right / up / backward; U×V = B
+  let pts2=profilePts.map(([sx,sy])=>{
+    const p=new THREE.Vector3(sx/w*2-1, -(sy/h*2-1), 0).unproject(orthoCam).sub(O);
+    return [p.dot(U), p.dot(V)];
+  });
+  let area=0; for(let i=0;i<pts2.length;i++){ const a=pts2[i], b=pts2[(i+1)%pts2.length]; area+=a[0]*b[1]-b[0]*a[1]; }
+  if(area<0) pts2.reverse();                     // CCW in (U,V) → outward normals below
+  // extrusion depth along B from ghost verts inside the outline
+  let d0=1e9, d1=-1e9, cnt=0;
+  if(state.source){
+    const P=state.source.pos, t=new THREE.Vector3();
+    for(let k=0;k<P.length;k+=3){
+      t.set(P[k],P[k+1],P[k+2]).sub(O);
+      if(pip([t.dot(U),t.dot(V)], pts2)){ const dd=t.dot(B); if(dd<d0)d0=dd; if(dd>d1)d1=dd; cnt++; }
+    }
+  }
+  if(cnt<8){ d0=-0.4; d1=0.4; }
+  const base={verts:[],faces:[]}, n=pts2.length;
+  const mk=(u,v,dd)=>{ base.verts.push([O.x+U.x*u+V.x*v+B.x*dd, O.y+U.y*u+V.y*v+B.y*dd, O.z+U.z*u+V.z*v+B.z*dd]); return base.verts.length-1; };
+  const near=pts2.map(p=>mk(p[0],p[1],d0)), far=pts2.map(p=>mk(p[0],p[1],d1));
+  const capTris=triangulate(pts2.map(p=>({x:p[0],y:p[1]})));
+  base.faces.push({ name:'Cap A', ring:far, tris:capTris.map(t=>[far[t[0]],far[t[1]],far[t[2]]]) });
+  base.faces.push({ name:'Cap B', ring:near.slice().reverse(), tris:capTris.map(t=>[near[t[2]],near[t[1]],near[t[0]]]) });
+  for(let i=0;i<n;i++){ const j=(i+1)%n;
+    base.faces.push({ name:'Side '+(i+1), ring:[near[i],near[j],far[j],far[i]], tris:[[near[i],near[j],far[j]],[near[i],far[j],far[i]]] }); }
+  const off=state.verts.length;
+  const obj=addObject('profile', base, 'Profile');
+  obj.rings=[near.map(i=>i+off), far.map(i=>i+off)];   // spine along the extrusion axis, near→far
+  setMode('select');
+  selectFace(obj.faces[0].name);
+}
+
+// ------------------------------------------------------------------ draw a face (lasso)
+// click out a polygon over the model AS CURRENTLY VIEWED (full perspective, not an
+// axis-snapped ghost like Profile) and paint exactly that shape as a new fillable region —
+// a masked sub-area of whichever existing face it was drawn on, not new geometry. The
+// polygon is stored in that face's own local 2D parametrization (the same basis
+// computeAtlas uses to place the face in its atlas cell), so it rides along automatically
+// whenever the atlas gets repacked, and is placed in a cell exactly like a real face is.
+// No triangle ever gets cut, so there's nothing to keep crack-free and no topology to
+// restore on undo — only state.objects[].faces[].regions gains an entry, which the normal
+// snapshot/restore already carries since it's just plain JSON inside state.objects.
+let lassoPts=[];
+const lassoOv=document.getElementById('lassoOv');
+function startLasso(){
+  ctrl.enabled=false;
+  lassoPts=[];
+  const w=view.clientWidth||1, h=view.clientHeight||1;
+  lassoOv.hidden=false; lassoOv.width=w; lassoOv.height=h;
+  drawLassoOv();
+}
+function endLasso(){
+  ctrl.enabled=true;
+  lassoPts=[]; lassoOv.hidden=true;
+}
+function drawLassoOv(mx,my){
+  const g=lassoOv.getContext('2d'); g.clearRect(0,0,lassoOv.width,lassoOv.height);
+  if(!lassoPts.length) return;
+  g.strokeStyle='#3ef07a'; g.lineWidth=2; g.beginPath();
+  lassoPts.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));
+  if(mx!==undefined) g.lineTo(mx,my);
+  g.stroke();
+  lassoPts.forEach(([x,y],i)=>{ g.fillStyle=i?'#ff4d4d':'#ffe14d'; g.beginPath(); g.arc(x,y,i?4:6,0,7); g.fill(); });
+}
+lassoOv.addEventListener('pointerdown', e=>{
+  const r=lassoOv.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
+  if(lassoPts.length>2 && Math.hypot(x-lassoPts[0][0],y-lassoPts[0][1])<12){ commitLasso(); return; }
+  lassoPts.push([x,y]); drawLassoOv();
+});
+lassoOv.addEventListener('pointermove', e=>{
+  const r=lassoOv.getBoundingClientRect(); drawLassoOv(e.clientX-r.left, e.clientY-r.top);
+});
+// inverse of proj2: place a face-local 2D point back onto the face's plane in world space
+function unproj2(p2,B){ return [B.o[0]+p2[0]*B.tx+p2[1]*B.bx, B.o[1]+p2[0]*B.ty+p2[1]*B.by, B.o[2]+p2[0]*B.tz+p2[1]*B.bz]; }
+// find the region (if any) with this name, wherever it lives
+function regionOwner(name){
+  if(!state.model) return null;
+  for(const f of state.model.faces) for(const r of f.regions||[]) if(r.name===name) return {face:f, region:r};
+  return null;
+}
+// one raycast per lasso point against the real mesh: which face got clicked the most —
+// that's the region's parent. Occlusion is automatic (nearest hit only), same as clicking
+// the model normally.
+function lassoMajorityFace(){
+  const counts=new Map();
+  for(const [x,y] of lassoPts){
+    const ndc=new THREE.Vector2((x/lassoOv.width)*2-1, -(y/lassoOv.height)*2+1);
+    raycaster.setFromCamera(ndc,cam); const hits=raycaster.intersectObject(mesh,false);
+    if(!hits.length) continue;
+    const fi=cur.triMeta[hits[0].faceIndex].face;
+    counts.set(fi,(counts.get(fi)||0)+1);
+  }
+  let best=-1, bc=-1;
+  for(const [fi,c] of counts) if(c>bc){ bc=c; best=fi; }
+  return best;
+}
+function commitLasso(){
+  if(lassoPts.length<3||!mesh||!cur||!state.model) return;
+  const faceIdx=lassoMajorityFace();
+  if(faceIdx<0){
+    lassoPts=[]; drawLassoOv();
+    document.getElementById('viewHint').textContent='Nothing under that shape — try again, or Esc to cancel.';
+    return;
+  }
+  const face=state.model.faces[faceIdx];
+  const B=faceBasis(face.ring.map(vi=>state.verts[vi]));
+  const nx=B.ty*B.bz-B.tz*B.by, ny=B.tz*B.bx-B.tx*B.bz, nz=B.tx*B.by-B.ty*B.bx;   // plane normal = tangent × bitangent
+  const ro=new THREE.Vector3(), rd=new THREE.Vector3();
+  // ray/plane intersect every point against the CHOSEN face's plane, rather than trusting
+  // each point's own mesh raycast — keeps the whole outline consistent even where the
+  // sketch strays a little past the face's own silhouette edge
+  const poly=lassoPts.map(([x,y])=>{
+    const ndc=new THREE.Vector2((x/lassoOv.width)*2-1, -(y/lassoOv.height)*2+1);
+    raycaster.setFromCamera(ndc,cam);
+    ro.copy(raycaster.ray.origin); rd.copy(raycaster.ray.direction);
+    const denom=rd.x*nx+rd.y*ny+rd.z*nz;
+    const t = Math.abs(denom)>1e-6 ? ((B.o[0]-ro.x)*nx+(B.o[1]-ro.y)*ny+(B.o[2]-ro.z)*nz)/denom : 1;
+    return proj2([ro.x+rd.x*t, ro.y+rd.y*t, ro.z+rd.z*t], B);
+  });
+  pushUndo();
+  const name=customName();
+  face.regions=face.regions||[];
+  face.regions.push({name, poly});
+  endLasso();
+  buildMesh();
+  setMode('select');
+  selectFace(name);
+}
+
+// decimation runs only on Decimate click; the slider is a log-scale triangle budget
+const DEC_MIN=24;
+function decSliderTris(){
+  const hi=Math.max(DEC_MIN+1, state.source.index.length/3);
+  return Math.round(Math.exp(Math.log(DEC_MIN)+(decTarget.value/100)*Math.log(hi/DEC_MIN)));
+}
+function decSliderSet(tris){
+  const hi=Math.max(DEC_MIN+1, state.source.index.length/3);
+  decTarget.value=Math.round(100*Math.log(Math.max(DEC_MIN,Math.min(hi,tris))/DEC_MIN)/Math.log(hi/DEC_MIN));
+}
+function decAbsorbFrac(v){ return v>0? Math.pow(10, -4+3*v/100) : 0; }   // log: 0=off, 100=10% of surface area
+function decEstimate(){
+  if(!state.source) return;
+  const t=decSliderTris();
+  decTargetV.textContent=t.toLocaleString()+' tris';
+  decEst.textContent='of '+(state.source.index.length/3).toLocaleString();
+  decAngleV.textContent=decAngle.value+'°';
+  const af=decAbsorbFrac(+decAbsorb.value);
+  decAbsorbV.textContent=af? (af*100).toPrecision(2).replace(/\.?0+$/,'')+'%' : 'off';
+  const pending=t!==state.decimate.target || +decAngle.value!==state.decimate.angle || +decAbsorb.value!==state.decimate.absorb;
+  decApply.classList.toggle('pending', pending);
+  decApply.textContent=pending?'Decimate ↺':'Decimate';
+}
+on('decTarget', decEstimate);
+on('decAngle', decEstimate);
+on('decAbsorb', decEstimate);
+document.getElementById('decApply').addEventListener('click', ()=>{
+  if(!state.source) return;
+  pushUndo();
+  state.decimate.target=decSliderTris(); state.decimate.angle=+decAngle.value; state.decimate.absorb=+decAbsorb.value;
+  runDecimate(); decEstimate();
+});
+[['sx',0],['sy',1],['sz',2]].forEach(([id,i])=>on(id,e=>{ state.scale[i]=+e.target.value; if(mesh) mesh.scale.set(...state.scale); }));
+
+// ------------------------------------------------------------------ undo / redo
+// snapshots the editable scene — verts, objects, fills, symmetry, decimate settings, and
+// which verts are locked — before each user-initiated change. Deliberately excludes the
+// loaded reference (state.source): it's huge (up to ~500k verts) and no undoable action
+// ever mutates it, so cloning it on every edit would be pure waste.
+const UNDO_MAX=60;
+const undoStack=[], redoStack=[];
+function cloneFills(fills){                      // fill.photo is a <canvas>; share it, don't JSON it
+  const out={};
+  for(const k in fills){
+    const f=fills[k];
+    out[k] = f.type==='flat'
+      ? { type:'flat', color:f.color }
+      : { type:'photo', src:f.src?f.src.map(p=>({...p})):f.src, rot:f.rot, flip:f.flip, photo:f.photo, sty:{...f.sty} };
+  }
+  return out;
+}
+function snapshotScene(){
+  return {
+    verts: state.verts.map(v=>v.slice()),
+    objects: JSON.parse(JSON.stringify(state.objects)),
+    fills: cloneFills(state.fills),
+    sym: {...state.sym},
+    decimate: {...state.decimate},
+    decStats: state.decStats?{...state.decStats}:null,
+    scale: state.scale.slice(),
+    locked: [...lockedVerts],
+    selFace: state.selFace,
+  };
+}
+function updateUndoButtons(){
+  document.getElementById('undoBtn').disabled = !undoStack.length;
+  document.getElementById('redoBtn').disabled = !redoStack.length;
+}
+function pushUndo(snap){                          // pass a pre-taken snapshot for drag gestures
+  undoStack.push(snap||snapshotScene());
+  if(undoStack.length>UNDO_MAX) undoStack.shift();
+  redoStack.length=0;
+  updateUndoButtons();
+}
+function restoreScene(snap){
+  state.verts=snap.verts.map(v=>v.slice());
+  state.objects=JSON.parse(JSON.stringify(snap.objects));
+  state.fills=cloneFills(snap.fills);
+  state.sym={...snap.sym};
+  state.decimate={...snap.decimate};
+  state.decStats=snap.decStats?{...snap.decStats}:null;
+  state.scale=snap.scale.slice();
+  lockedVerts.clear(); for(const vi of snap.locked) lockedVerts.add(vi);
+  for(const k in grabCache) delete grabCache[k];
+  ['sx','sy','sz'].forEach((id,i)=>document.getElementById(id).value=state.scale[i]);
+  if(state.source){                                // decimate sliders only exist once a reference is loaded
+    decSliderSet(state.decimate.target);
+    document.getElementById('decAngle').value=state.decimate.angle;
+    document.getElementById('decAbsorb').value=state.decimate.absorb;
+    decEstimate();
+  }
+  document.querySelectorAll('#symSeg button').forEach(b=>b.classList.toggle('on', state.sym['xyz'[+b.dataset.a]]));
+  buildMesh();
+  const stillThere = snap.selFace && state.objects.some(o=>o.faces.some(f=>
+    f.name===snap.selFace || (f.regions||[]).some(r=>r.name===snap.selFace)));
+  if(stillThere) selectFace(snap.selFace); else clearSelection();
+  updateVertsHi();
+}
+function undo(){
+  if(!undoStack.length) return;
+  redoStack.push(snapshotScene());
+  restoreScene(undoStack.pop());
+  updateUndoButtons();
+}
+function redo(){
+  if(!redoStack.length) return;
+  undoStack.push(snapshotScene());
+  restoreScene(redoStack.pop());
+  updateUndoButtons();
+}
+document.getElementById('undoBtn').addEventListener('click', undo);
+document.getElementById('redoBtn').addEventListener('click', redo);
+addEventListener('keydown', e=>{
+  if(!(e.ctrlKey||e.metaKey)) return;
+  if(e.key==='z'&&!e.shiftKey){ e.preventDefault(); undo(); }
+  else if(e.key==='y'||(e.key==='z'&&e.shiftKey)){ e.preventDefault(); redo(); }
+});
+// range sliders/color picker fire many 'input' events per drag; these gestures snapshot
+// once at the start and reset here, whenever a drag ends anywhere on the page
+let styGesture=false, colorGesture=false;
+addEventListener('pointerup', ()=>{ styGesture=false; colorGesture=false; });
+
+// ------------------------------------------------------------------ project save/load
+// The full editable scene as one JSON file — same data undo snapshots carry
+// (verts/objects/fills/sym/scale/locks), plus every photo canvas as a PNG
+// data URI (deduplicated: fills share photos by reference). This is what
+// Export .gltf can't do: a .gltf is a merged mesh with baked texture, but a
+// project reloads with faces, fills and photos still editable. Also the
+// interchange format tools/build-car.js emits — generated geometry opens
+// here for hand-tweaking and texturing.
+// NOT saved: the reference model (state.source) — same policy as undo (too
+// large, never mutated); reload the ghost by hand after loading if needed.
+const PROJECT_FORMAT='forge-project@1';
+function serializeProject(){
+  const photos=[], photoIds=new Map();
+  const idFor=c=>{ if(!c) return null;
+    if(!photoIds.has(c)){ photoIds.set(c,photos.length); photos.push(c.toDataURL('image/png')); }
+    return photoIds.get(c); };
+  const fills={};
+  for(const [name,f] of Object.entries(state.fills))
+    fills[name]= f.type==='flat' ? {type:'flat', color:f.color}
+      : {type:'photo', src:f.src, rot:f.rot, flip:f.flip, sty:{...f.sty}, photo:idFor(f.photo)};
+  return {
+    format:PROJECT_FORMAT,
+    verts:state.verts, objects:state.objects, fills, photos,
+    activePhoto:idFor(state.photo),
+    sym:{...state.sym}, scale:state.scale, locked:[...lockedVerts],
+    sty:{...state.sty}, objCounter, selFace:state.selFace,
+    carkit:state.carkit||null,                     // Auto livery re-runs with the kit's colors
+  };
+}
+function dataUrlToCanvas(url){
+  return new Promise((res,rej)=>{ const img=new Image();
+    img.onload=()=>{ const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+      c.getContext('2d').drawImage(img,0,0); res(c); };
+    img.onerror=()=>rej(new Error('bad photo data in project'));
+    img.src=url; });
+}
+function validateProject(d){
+  if(d.format!==PROJECT_FORMAT) return 'not a Scene Forge project (format: '+(d.format||'missing')+')';
+  if(!Array.isArray(d.verts)||!d.verts.every(v=>Array.isArray(v)&&v.length===3&&v.every(Number.isFinite)))
+    return 'verts must be an array of [x,y,z]';
+  if(!Array.isArray(d.objects)||!d.objects.length) return 'objects missing/empty';
+  const nv=d.verts.length, inRange=i=>Number.isInteger(i)&&i>=0&&i<nv;
+  for(const o of d.objects){
+    if(!o.name||!Array.isArray(o.faces)||!o.faces.length) return `object "${o.name||'?'}": needs name + faces`;
+    for(const f of o.faces){
+      if(!f.name||!Array.isArray(f.ring)||f.ring.length<3||!Array.isArray(f.tris)||!f.tris.length)
+        return `face "${f.name||'?'}": needs name, ring (≥3), tris`;
+      if(!f.ring.every(inRange)||!f.tris.every(t=>t.length===3&&t.every(inRange)))
+        return `face "${f.name}": vertex index out of range (${nv} verts)`;
+    }
+  }
+  return null;
+}
+async function loadProjectData(data){
+  const bad=validateProject(data); if(bad) throw new Error(bad);
+  const photoCanvases=await Promise.all((data.photos||[]).map(dataUrlToCanvas));
+  const fills={};
+  for(const [name,f] of Object.entries(data.fills||{}))
+    fills[name]= f.type==='flat' ? {type:'flat', color:f.color}
+      : {type:'photo', src:f.src||null, rot:f.rot||0, flip:!!f.flip,
+         sty:{...state.sty, ...f.sty}, photo:photoCanvases[f.photo]??null};
+  pushUndo();                                     // loading replaces the scene as ONE undoable step
+  state.carkit=data.carkit||null;
+  objCounter=Math.max(objCounter, data.objCounter||0);
+  if(data.activePhoto!=null && photoCanvases[data.activePhoto]){
+    state.photo=photoCanvases[data.activePhoto]; layoutPhoto();
+    document.getElementById('noPhoto').hidden=true;
+  }
+  if(data.sty) state.sty={...state.sty, ...data.sty};
+  restoreScene({
+    verts:data.verts, objects:data.objects, fills,
+    sym:{x:false,y:false,z:false, ...data.sym},
+    decimate:{...state.decimate}, decStats:state.decStats,   // reference/decimation state is not part of a project
+    scale:Array.isArray(data.scale)&&data.scale.length===3?data.scale:[1,1,1],
+    locked:data.locked||[], selFace:data.selFace||null,
+  });
+}
+async function loadProjectFile(f){
+  try{ await loadProjectData(JSON.parse(await f.text())); }
+  catch(err){ alert('Project load failed: '+err.message); }
+}
+document.getElementById('saveProj').addEventListener('click', ()=>{
+  const blob=new Blob([JSON.stringify(serializeProject())],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='scene.forge.json'; a.click();
+});
+document.getElementById('loadProj').addEventListener('click', ()=>document.getElementById('projFile').click());
+document.getElementById('projFile').addEventListener('change', e=>{
+  const f=e.target.files&&e.target.files[0]; if(f) loadProjectFile(f);
+  e.target.value='';
+});
+// ------------------------------------------------------------------ car generation (carlib)
+// Same loft/paint/wire code as tools/build-car.js — see tools/lib/carlib.js.
+let _carRig=null;
+async function carRig(){
+  if(!_carRig){
+    const [pl,cfg]=await Promise.all([
+      fetch('../../shared/src/placeholders.js').then(r=>r.text()),
+      import('../../shared/src/config.js'),
+    ]);
+    _carRig={ wheel:carParseWheel(pl), scale:cfg.CONFIG.carScale };
+  }
+  return _carRig;
+}
+async function carGenFromPhoto(opts={}){
+  if(!state.photo){ alert('Load a side-profile photo first (Load photo…)'); return null; }
+  const { wheel, scale }=await carRig();
+  const trace=tracePhoto(state.photo, opts);
+  const kit=kitFromTrace(trace, opts);
+  const { project, warnings }=loftKit(kit, wheel, scale);
+  if(warnings.length) console.warn('car gen:\n'+warnings.join('\n'));
+  await loadProjectData(project);                  // one undoable step; source photo stays active
+  state.carkit=kit;
+  return kit;
+}
+async function carAutoLivery(lv){
+  const body=state.objects.find(o=>o.faces.some(f=>/· Right Side$/.test(f.name)));
+  if(!body){ alert('No car body — generate one first (🚗 From photo, or load a build-car project)'); return null; }
+  const { wheel, scale }=await carRig();
+  const geom=deriveGeom(state.verts, body, wheel, scale, state.carkit);
+  // Real kind-classified panels' own z-extent (kit-space zf, 0=nose) — lets
+  // paintLivery's side-view window follow what was ACTUALLY sculpted
+  // (Hood/Windshield/Roof/... faces) instead of only the Right Side ring's
+  // own silhouette, which a hand-added panel never has to match. Same zf
+  // formula wireLivery's own kitOf() uses internally, so the two stay in sync.
+  const zMaxG=Math.max(...body.faces.flatMap(f=>f.ring.map(vi=>state.verts[vi][2])));
+  const zfOf=vi=>(zMaxG-state.verts[vi][2])/(geom.length/scale);
+  const groundY=wheel.localY-wheel.radius; // same convention as deriveGeom's toKit()
+  const yOf=vi=>(state.verts[vi][1]-groundY)*scale;
+  const kindRanges={};
+  // Real (zf,y) height data from the CABIN faces' own vertices only (not
+  // hood/deck/nose/tail, which can sit at very different heights and would
+  // just add noise to a roofline/sill curve) — lets the side-view
+  // sill/roofline follow what was ACTUALLY sculpted instead of only the
+  // Right Side ring, which can be a plain flat-topped box on a
+  // hand-detailed car (see topYReal in paintLivery).
+  const topProfile=[];
+  for(const f of body.faces){
+    if(/Right Side|Left Side/.test(f.name)) continue;
+    const kind=resolveFaceKind(f);
+    if(!['windshield','roof','rearglass'].includes(kind)) continue;
+    const zs=f.ring.map(zfOf), ys=f.ring.map(yOf);
+    const z0=Math.min(...zs), z1=Math.max(...zs), yMin=Math.min(...ys);
+    for(let i=0;i<f.ring.length;i++) topProfile.push([zs[i], ys[i]]);
+    const r=kindRanges[kind];
+    kindRanges[kind]=r
+      ?{z0:Math.min(r.z0,z0),z1:Math.max(r.z1,z1),yMin:Math.min(r.yMin,yMin)}
+      :{z0,z1,yMin};
+  }
+  topProfile.sort((a,b)=>a[0]-b[0]);
+  if(topProfile.length) kindRanges.topProfile=topProfile;
+  const photos=paintLivery(geom, lv, ()=>document.createElement('canvas'), kindRanges);
+  const wires=wireLivery(state.verts, body, geom, wheel, scale);
+  pushUndo();
+  const slots=[photos.side_right, photos.side_left, photos.wrap];
+  // One painted canvas per distinct kind actually present (shared across
+  // every face of that kind, same caching pattern as the slots above).
+  const panelCache={};
+  const panelFor=kind=>(panelCache[kind] ??= paintPanel(kind, lv, ()=>document.createElement('canvas')));
+  for(const [name,w] of Object.entries(wires))
+    state.fills[name]={ type:'photo', src:w.src.map(([x,y])=>({x,y})), rot:0, flip:false,
+      photo: w.slot===3 ? panelFor(w.kind) : slots[w.slot],
+      // side caps span the whole car — bigger stylize budget than the strips
+      sty:{ size:w.big?512:256, colors:24, dither:true, ditherAmt:0.5 } };
+  if(state.carkit) state.carkit.livery={...lv};
+  for(const k in grabCache) delete grabCache[k];
+  buildMesh();
+  return lv;
+}
+document.getElementById('carGenBtn').addEventListener('click', ()=>{
+  if(!state.photo){                                // no photo yet → pick one, then reopen this dialog
+    const file=document.getElementById('file');
+    const once=()=>{ file.removeEventListener('change', once);
+      let tries=0;                                 // image decode is async — wait for it
+      const poll=setInterval(()=>{ if(state.photo||++tries>40){ clearInterval(poll);
+        if(state.photo) document.getElementById('carGenBtn').click(); } }, 100); };
+    file.addEventListener('change', once);
+    file.click();
+    return;
+  }
+  const dlg=document.getElementById('carGenDlg');
+  dlg.onclose=()=>{ if(dlg.returnValue!=='ok') return;
+    carGenFromPhoto({
+      facing:document.getElementById('cgFacing').value,
+      length:+document.getElementById('cgLength').value||2.4,
+      width:+document.getElementById('cgWidth').value||undefined,
+    }).catch(err=>alert('Car generation failed: '+err.message));
+  };
+  dlg.showModal();
+});
+document.getElementById('carTexBtn').addEventListener('click', ()=>{
+  const lv=state.carkit?.livery;
+  if(lv){                                          // prefill from the kit's colors
+    for(const [id,k] of [['clBody','bodyColor'],['clStripe','stripeColor'],['clAccent','accent'],['clGlass','windowColor']])
+      if(lv[k]) document.getElementById(id).value=lv[k];
+    if(lv.number) document.getElementById('clNumber').value=lv.number;
+    if(lv.team) document.getElementById('clTeam').value=lv.team;
+    if(lv.badge) document.getElementById('clBadge').value=lv.badge;
+    if(lv.sponsors) document.getElementById('clSponsors').value=lv.sponsors.join(', ');
+  }
+  const dlg=document.getElementById('carLiveryDlg');
+  dlg.onclose=()=>{ if(dlg.returnValue!=='ok') return;
+    carAutoLivery({
+      bodyColor:document.getElementById('clBody').value,
+      stripeColor:document.getElementById('clStripe').value,
+      accent:document.getElementById('clAccent').value,
+      windowColor:document.getElementById('clGlass').value,
+      number:+document.getElementById('clNumber').value||1,
+      team:document.getElementById('clTeam').value,
+      badge:document.getElementById('clBadge').value,
+      sponsors:document.getElementById('clSponsors').value.split(',').map(s=>s.trim()).filter(Boolean),
+    }).catch(err=>alert('Auto livery failed: '+err.message));
+  };
+  dlg.showModal();
+});
+
+window.forgeSerializeProject=serializeProject;   // headless verification handle (tools/)
+window.forgeCarFromPhoto=carGenFromPhoto;        // headless handles for the same flows
+window.forgeAutoLivery=carAutoLivery;
+window.forgeLoadPhotoUrl=async(url)=>{           // programmatic "Load photo…" (tests, tooling)
+  const blob=await (await fetch(url)).blob();
+  const img=await createImageBitmap(blob);
+  const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+  c.getContext('2d').drawImage(img,0,0); state.photo=c; layoutPhoto();
+  document.getElementById('noPhoto').hidden=true;
+};
+
+// ------------------------------------------------------------------ export
+document.getElementById('export').addEventListener('click', ()=>{
+  if(!mesh){ alert('Nothing to export.'); return; }
+  const hi=[faceHi,hoverHi,editHi,hoverTriHi].filter(Boolean); hi.forEach(h=>mesh.remove(h));   // selection/hover/edit outlines are UI, not asset
+  const done=()=>hi.forEach(h=>mesh.add(h));
+  new GLTFExporter().parse(mesh, gltf=>{
+    done();
+    const blob=new Blob([JSON.stringify(gltf)],{type:'model/gltf+json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='scene.gltf'; a.click();
+  }, err=>{ done(); console.error(err); }, {binary:false});
+});
+
+// ------------------------------------------------------------------ init
+window.forge=state;                              // debug handles
+window.forgeLocked=lockedVerts;
+window.forgeScreen=vi=>{ const p=state.verts[vi], v=new THREE.Vector3(p[0],p[1],p[2]).project(cam);
+  const r=renderer.domElement.getBoundingClientRect();
+  return { x:r.left+(v.x+1)/2*r.width, y:r.top+(1-v.y)/2*r.height }; };
+addObject('cube', fixWinding(cubeModel()));
+requestAnimationFrame(()=>{ resize(); });
+
+// ?project=<url> boots straight into a saved/generated project — how the
+// pipeline opens tools/build-car.js output for tweaking, and how
+// tools/screenshot.js verifies it headlessly. window.__READY mirrors
+// preview.html/carViewer.html: true once the loaded scene has really
+// rendered, or an error string.
+{
+  const projUrl=new URLSearchParams(location.search).get('project');
+  const ready=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{ window.__READY=true; }));
+  if(projUrl)
+    fetch(projUrl)
+      .then(r=>{ if(!r.ok) throw new Error(r.status+' fetching '+projUrl); return r.json(); })
+      .then(loadProjectData).then(ready)
+      .catch(err=>{ window.__READY='error: '+err.message; alert('Project load failed: '+err.message); });
+  else ready();
+}
+</script>

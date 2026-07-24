@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Placeholder GP — Crowd Editor</title>
+<style>
+  :root {
+    --accent: #ffcc33;
+    --panel: rgba(10, 12, 18, 0.82);
+    --panel-border: rgba(255, 255, 255, 0.12);
+  }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #0b0e14; font-family: system-ui, sans-serif; }
+  .hidden { display: none !important; }
+
+  #hint {
+    position: fixed; left: 316px; right: 356px; bottom: 16px; z-index: 20; padding: 9px 14px;
+    font-size: 12px; line-height: 1.6; color: #cfd6e4; text-align: center;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px;
+  }
+  #hint b { color: #fff; }
+  #back { position: fixed; left: 16px; top: 16px; z-index: 30; font-size: 12px; }
+  #back a { color: #9aa4b8; margin-right: 10px; }
+
+  .side {
+    position: fixed; top: 0; bottom: 0; width: 300px; z-index: 25;
+    display: flex; flex-direction: column;
+    background: rgba(8, 10, 16, 0.92); color: #dde3ee; font-size: 12px;
+    backdrop-filter: blur(6px);
+  }
+  #left { left: 0; border-right: 1px solid var(--panel-border); }
+  #right { right: 0; width: 340px; border-left: 1px solid var(--panel-border); }
+  .side .head {
+    padding: 12px 16px; font-weight: 800; font-style: italic; letter-spacing: 0.08em;
+    color: var(--accent); border-bottom: 1px solid var(--panel-border);
+  }
+  .side .body { flex: 1; overflow-y: auto; padding: 6px 14px 12px; }
+  .gTitle {
+    margin: 12px 0 4px; font-weight: 700; letter-spacing: 0.14em; font-size: 11px;
+    color: #9aa4b8; text-transform: uppercase;
+  }
+  .sub { color: #7d879c; font-size: 10.5px; line-height: 1.5; margin: -2px 0 6px; }
+  .row { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: center; padding: 3px 0; }
+  .row label { color: #b9c1d2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  input[type="text"], input[type="number"], textarea, select {
+    width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.07); border: 1px solid var(--panel-border);
+    color: #eef1f7; border-radius: 5px; padding: 4px 6px; font-size: 11px; font-family: inherit;
+  }
+  select option { background: #14171f; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  input[type="file"] { width: 100%; font-size: 11px; color: #b9c1d2; margin-bottom: 8px; }
+  textarea { resize: vertical; font-family: ui-monospace, monospace; font-size: 10px; }
+
+  .btnRow { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+    padding: 6px 8px; border-radius: 6px; border: none;
+    background: rgba(255,255,255,0.12); color: #eef1f7;
+  }
+  button:hover { background: rgba(255,255,255,0.22); }
+  button.active { background: var(--accent); color: #10131a; }
+  button.danger { background: rgba(200,60,50,0.35); }
+  button.small { padding: 3px 6px; font-size: 10px; }
+  button.wide { flex: 1; }
+
+  .msg { min-height: 16px; margin-top: 5px; color: var(--accent); font-size: 11px; }
+
+  .item {
+    border: 1px solid var(--panel-border); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px;
+    background: rgba(255,255,255,0.04);
+  }
+  .item .itemHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+  .item .itemHead b { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .item.activeItem { border-color: var(--accent); background: rgba(255,204,51,0.08); }
+  .item .meta { color: #7d879c; font-size: 10.5px; }
+
+  #typePalette { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+  #typePalette button { flex: 1; min-width: 78px; }
+
+  #foot { padding: 10px 14px 12px; border-top: 1px solid var(--panel-border); }
+  #foot input[type="text"] { margin-bottom: 6px; }
+
+  #stageWrap {
+    position: fixed; left: 300px; right: 340px; top: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      linear-gradient(45deg, #10131a 25%, transparent 25%) -8px 0/16px 16px,
+      linear-gradient(-45deg, #10131a 25%, transparent 25%) -8px 0/16px 16px,
+      linear-gradient(45deg, transparent 75%, #10131a 75%) 0 0/16px 16px,
+      linear-gradient(-45deg, transparent 75%, #10131a 75%) 0 0/16px 16px,
+      #0b0e14;
+  }
+  #stage { box-shadow: 0 0 0 1px rgba(255,255,255,0.15); cursor: default; touch-action: none; }
+  #stage.drawMode { cursor: crosshair; }
+  #emptyHint { position: absolute; color: #8a93a6; font-size: 13px; pointer-events: none; text-align: center; }
+
+  #previewCanvas { width: 100%; height: 300px; background: #0b0e14; border: 1px solid var(--panel-border); border-radius: 8px; display: block; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<div id="back"><a href="../game/index.html">&larr; Game</a><a href="./editor.html">Track editor</a></div>
+
+<div id="left" class="side">
+  <div class="head">CROWD PARTS</div>
+  <div class="body">
+    <div class="gTitle">Source images</div>
+    <input type="file" id="imgLoad" accept="image/*">
+    <div id="imageList"></div>
+
+    <div class="gTitle">New shape type</div>
+    <div class="sub">Left Arm = torso's left shoulder (as viewed), Right Arm = its right shoulder. Trace arms hanging in their natural resting pose — that's the 0&deg; position. Bodies/arms preview as flat colour silhouettes; heads preview pixelated. Each image has a Scale below — calibrate it so parts traced from different photos (different zoom/distance) end up proportionate when mixed.</div>
+    <div id="typePalette"></div>
+
+    <div class="gTitle">Mode</div>
+    <div class="btnRow">
+      <button class="wide active" data-mode="select">Select / Edit</button>
+      <button class="wide" data-mode="draw">Draw Shape</button>
+    </div>
+    <div class="btnRow">
+      <button class="wide" id="finishShape">Finish Shape (Enter)</button>
+      <button class="wide" id="cancelShape">Cancel (Esc)</button>
+    </div>
+
+    <div id="partInspector" class="hidden">
+      <div class="gTitle">Selected part</div>
+      <div class="row"><label>Type</label><select id="pType"></select></div>
+      <div class="row"><label>Attach X</label><input type="number" id="pAX" step="1"></div>
+      <div class="row"><label>Attach Y</label><input type="number" id="pAY" step="1"></div>
+      <div class="row"><label>Scale &times;</label><input type="number" id="pScale" step="0.05" min="0.05"></div>
+      <div id="armRange" class="hidden">
+        <div class="row"><label>Swing min &deg;</label><input type="number" id="pArmMin" step="1"></div>
+        <div class="row"><label>Swing max &deg;</label><input type="number" id="pArmMax" step="1"></div>
+      </div>
+      <div class="btnRow"><button class="wide danger" id="pDelete">Delete part</button></div>
+    </div>
+
+    <div class="gTitle">Parts <span id="partCount" style="float:right;color:#7d879c"></span></div>
+    <div id="partList"></div>
+  </div>
+</div>
+
+<div id="right" class="side">
+  <div class="head">CROWD PREVIEW</div>
+  <div class="body">
+    <canvas id="previewCanvas" width="640" height="480"></canvas>
+    <div class="row"><label>Figures</label><input type="range" id="figCount" min="1" max="30" step="1" value="12"></div>
+    <div class="row"><label>Shirt colour %</label><input type="range" id="primaryChance" min="0" max="100" step="5" value="40"></div>
+    <div class="sub">Trousers stay grey/brown/black. Shirts roll a primary colour this often, otherwise grey/brown/black too. Sleeves mostly match the shirt, occasionally go their own way.</div>
+    <div class="btnRow">
+      <button class="wide" id="regenBtn">Regenerate</button>
+      <button class="wide" id="playBtn">Pause</button>
+    </div>
+  </div>
+  <div id="foot">
+    <input type="text" id="kName" placeholder="kit name">
+    <textarea id="kJson" rows="6" spellcheck="false" placeholder="Export writes the full crowd kit JSON here (parts + embedded source images). Paste one and hit Apply to load it."></textarea>
+    <div class="btnRow">
+      <button class="wide" data-act="export">Export</button>
+      <button class="wide" data-act="copy">Copy</button>
+      <button class="wide" data-act="download">Download</button>
+      <button class="wide" data-act="apply">Apply</button>
+      <button class="wide danger" data-act="reset">New kit</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+
+<div id="stageWrap">
+  <canvas id="stage"></canvas>
+  <div id="emptyHint">Load an image (left panel) to start tracing crowd parts.</div>
+</div>
+
+<div id="hint">
+  <b>Draw Shape</b>: click to add outline points, click near the first point (or Enter) to close it &nbsp;·&nbsp;
+  <b>Select</b>: click a shape to select it, drag its yellow crosshair to set the attach point, drag a white dot to reshape, Del to remove &nbsp;·&nbsp;
+  Tracing is always on the real photo — the flat-colour/pixelated look is only in the crowd preview
+</div>
+
+<script type="module" src="./src/crowdEditor.js"></script>
+</body>
+</html>

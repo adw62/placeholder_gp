@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "carkit.schema.json",
+  "title": "Car kit — declarative GT1-style car body",
+  "description": "Input to tools/build-car.js, which lofts it into a Scene Forge project (.forge.json) for hand-tweak + photo texturing. All dimensions in GAME METERS (the builder divides by CONFIG.carScale to author at gltf scale). Car faces +Z: zFrac 0 = nose, 1 = tail.",
+  "type": "object",
+  "required": ["format", "id", "length", "width", "sideProfile"],
+  "properties": {
+    "format": { "const": "carkit@1" },
+    "id": { "type": "string", "description": "Slug — becomes the output filename and suggested ASSETS.carModels id" },
+    "name": { "type": "string" },
+    "length": { "type": "number", "minimum": 1, "maximum": 6, "description": "Overall body length, m. Baseline White #7 is 2.40 m" },
+    "width": { "type": "number", "minimum": 0.5, "maximum": 3, "description": "Overall body width, m. Baseline is 0.92 m" },
+    "sideProfile": {
+      "type": "object",
+      "required": ["top", "bottom"],
+      "description": "The side silhouette as two nose→tail polylines; the builder closes them into one ring (top, then bottom reversed). Read these straight off a profile photo.",
+      "properties": {
+        "top": {
+          "type": "array", "minItems": 3,
+          "items": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+          "description": "[zFrac 0..1, yMeters] upper silhouette: bumper top → hood → windshield → roof → deck → tail. Each segment becomes one textureable face strip (Hood/Windshield/Roof/... named by slope+position), so put points where panels change."
+        },
+        "bottom": {
+          "type": "array", "minItems": 2,
+          "items": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+          "description": "[zFrac, yMeters] lower silhouette nose→tail (floor line, usually 3-4 points). y must stay below top's y. Wheels are NOT modeled — the game rig adds them (WHEEL/buildPlayerCar)."
+        }
+      }
+    },
+    "planTaper": {
+      "type": "array",
+      "items": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+      "description": "Optional [zFrac, widthFrac 0..1] pairs: body half-width as a fraction of width/2, interpolated along the length (nose/tail pinch). Omit = constant width slab."
+    },
+    "bodyColor": { "type": "string", "description": "Hex flat fill for body faces (placeholder until photo texturing), default #b8bec8" },
+    "glassColor": { "type": "string", "description": "Hex flat fill for Windshield/Rear Glass faces, default #1c222e" },
+    "boxes": {
+      "type": "array",
+      "description": "Optional extra cuboid objects (spoiler, scoop). Own object each — movable/deletable in Scene Forge.",
+      "items": {
+        "type": "object",
+        "required": ["name", "size", "pos"],
+        "properties": {
+          "name": { "type": "string" },
+          "size": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" }, "description": "[w,h,l] meters" },
+          "pos": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" }, "description": "[x,y,z] meters, same frame as the body" }
+        }
+      }
+    },
+    "wheels": {
+      "type": "object",
+      "description": "Wheel centers in game meters — NOT geometry; emitted as the ASSETS.carModels registration snippet (wheelOffset). Baseline (White #7): x 0.44*carScale... see WHEEL in placeholders.js; omit fields that match baseline. Also drives the painted wheel-arch positions in the livery.",
+      "properties": {
+        "frontZ": { "type": "number" }, "rearZ": { "type": "number" },
+        "x": { "type": "number" }, "y": { "type": "number" }
+      }
+    },
+    "livery": {
+      "type": "object",
+      "description": "Presence turns on the automatic texturing pass: build-car runs tools/paint-car.py (GT1-style flat livery — beltline, roundel numbers, sponsors, windows/arches painted into the side view) and wires every body face as a real Scene Forge photo grab into the generated side_right/side_left/wrap paintings — so each face stays hand-editable (handles, Detail/Colors/Dither) afterward. Omit for flat-color fills. --no-paint skips it.",
+      "properties": {
+        "number": { "type": "integer", "description": "Roundel number (doors + roof)" },
+        "bodyColor": { "type": "string", "description": "Livery base coat (hex), default #dfe3ea" },
+        "stripeColor": { "type": "string", "description": "Twin racing stripes over nose/hood/roof/deck/tail, default #b02030" },
+        "accent": { "type": "string", "description": "Beltline stripe + text color, default #1a2a6e" },
+        "windowColor": { "type": "string", "description": "Painted glass, default #141a24" },
+        "team": { "type": "string", "description": "Hood lettering (painted to read from the nose), default PLACEHOLDER GP" },
+        "badge": { "type": "string", "description": "Tail badge text, default PGP" },
+        "sponsors": { "type": "array", "items": { "type": "string" }, "description": "Up to 3: front fender, rear quarter, rocker" }
+      }
+    }
+  }
+}

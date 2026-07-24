@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Placeholder GP — Tuning Lab</title>
+<style>
+  /* :root palette + #tuner panel below are copied verbatim from
+     game/index.html so the panel reads identically here — see that file
+     if the GT UI language ever changes, keep both in sync. */
+  :root {
+    --accent: #f7941d;
+    --accent-hi: #ffc164;
+    --accent-lo: #c76a08;
+    --ink: #eef1f7;
+    --dim: #8d97ab;
+    --panel-border: rgba(255, 255, 255, 0.12);
+    --steel-bar: linear-gradient(180deg, #566076 0%, #2b3140 45%, #141824 55%, #232936 100%);
+    --orange-bar: linear-gradient(180deg, var(--accent-hi) 0%, var(--accent) 45%, var(--accent-lo) 55%, #e8862a 100%);
+  }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #0b0e14; }
+  canvas { display: block; }
+
+  #info {
+    position: fixed; left: 10px; top: 10px; z-index: 10; padding: 8px 12px;
+    font: 12px/1.6 system-ui, sans-serif; color: #cfd6e4;
+    background: rgba(10, 12, 18, 0.82); border-radius: 8px; white-space: pre;
+  }
+  #info b { color: var(--accent); }
+  #err { color: #ff8080; }
+
+  /* ---------- Tuning lab panel (verbatim from game/index.html) ---------- */
+  #tuner {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 320px; z-index: 35;
+    display: flex; flex-direction: column;
+    background: rgba(8, 10, 16, 0.94); border-left: 1px solid var(--panel-border);
+    color: #dde3ee; font-size: 12px;
+  }
+  #tuner .tHead {
+    padding: 12px 16px; font-weight: 700; font-style: italic; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--accent); border-bottom: 1px solid var(--panel-border); text-shadow: 1px 1px 0 #000;
+  }
+  #tuner .tHead span { float: right; color: #7d879c; font-weight: 400; font-style: normal; font-size: 11px; text-transform: none; text-shadow: none; }
+  #tuner .tCarSel { padding: 10px 16px; border-bottom: 1px solid var(--panel-border); }
+  #tuner .tCarSel select {
+    width: 100%; background: rgba(255,255,255,0.07); border: 1px solid var(--panel-border);
+    color: #eef1f7; border-radius: 0; padding: 5px 8px; font-size: 12px;
+  }
+  #tuner .tCarSel select option { background: #14171f; }
+  #tuner .tTabs { display: flex; border-bottom: 1px solid var(--panel-border); }
+  #tuner .tTab {
+    flex: 1; font: inherit; font-size: 11px; font-weight: 700; font-style: italic; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
+    padding: 8px 4px; border: none; background: transparent; color: #7d879c;
+    border-bottom: 2px solid transparent;
+  }
+  #tuner .tTab:hover { color: #b9c1d2; }
+  #tuner .tTab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  #tuner .tBody { flex: 1; overflow-y: auto; padding: 6px 14px 12px; }
+  #tuner .tGTitle {
+    margin: 12px 0 4px; font-weight: 700; font-style: italic; letter-spacing: 0.14em; font-size: 11px;
+    color: #9aa4b8; text-transform: uppercase;
+  }
+  #tuner .tRow { display: grid; grid-template-columns: 108px 1fr 58px; gap: 8px; align-items: center; padding: 2px 0; }
+  #tuner .tRow label { color: #b9c1d2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #tuner .tRow.modified label { color: var(--accent); }
+  #tuner .tStar { color: var(--accent); font-style: normal; }
+  #tuner input[type="range"] { width: 100%; accent-color: var(--accent); height: 14px; }
+  #tuner input[type="number"] {
+    width: 100%; background: rgba(255,255,255,0.07); border: 1px solid var(--panel-border);
+    color: #eef1f7; border-radius: 0; padding: 2px 4px; font-size: 11px;
+  }
+  #tuner .tRow select {
+    grid-column: span 2; background: rgba(255,255,255,0.07); border: 1px solid var(--panel-border);
+    color: #eef1f7; border-radius: 0; padding: 3px 4px; font-size: 11px;
+  }
+  #tuner .tRow select option { background: #14171f; }
+  #tuner .tFoot { padding: 10px 14px 12px; border-top: 1px solid var(--panel-border); }
+  #tuner #tuneName {
+    width: 100%; box-sizing: border-box; margin-bottom: 6px;
+    background: rgba(255,255,255,0.07); border: 1px solid var(--panel-border);
+    color: #eef1f7; border-radius: 0; padding: 5px 8px; font-size: 12px;
+  }
+  #tuner #tuneJson {
+    width: 100%; box-sizing: border-box; resize: vertical;
+    background: rgba(255,255,255,0.05); border: 1px solid var(--panel-border);
+    color: #b9c1d2; border-radius: 0; padding: 6px 8px;
+    font-family: ui-monospace, monospace; font-size: 10px;
+  }
+  #tuner .tBtns { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  #tuner .tBtns button {
+    flex: 1; font: inherit; font-size: 11px; font-weight: 700; font-style: italic; text-transform: uppercase; cursor: pointer;
+    padding: 6px 4px; border-radius: 0; border: 1px solid #05070b; border-top-color: rgba(255,255,255,0.35);
+    background: var(--steel-bar); color: #eef1f7; text-shadow: 1px 1px 0 #000;
+  }
+  #tuner .tBtns button:hover { background: var(--orange-bar); color: #1a0e00; text-shadow: none; }
+  #tuner .tBtns button.danger { background: linear-gradient(180deg, #a2493e 0%, #6e2a22 45%, #4a1a14 55%, #5e241c 100%); }
+  #tuner .tMsg { min-height: 16px; margin-top: 5px; color: var(--accent); font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="info">loading…</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+// =====================================================================
+// Tuning Lab sandbox — a driveable open plane with a few static obstacles
+// and the Tuning Lab panel always open, so physics feel can be tuned
+// without racing a real track. Replaces the old in-race 'T' toggle (see
+// game/src/tuninglab.js's header comment) — this is now the only place
+// CONFIG.physics/audio gets live-tuned.
+//
+// Export a tune here and it's just a JSON file: drop it into
+// game/carProfiles/ and it becomes that car's live tune in the real game
+// too (see game/src/carProfiles.js — carId in the export ties it to a car,
+// last-discovered file for a given carId wins, no in-game picker).
+//
+// Driving/camera/effects/audio code below is adapted from game/src/main.js,
+// with every track-query dependency (track.query, groundHeightAt, the
+// spline-based wall) replaced by flat-ground constants (y=0, slope=0) and
+// simple circular obstacle colliders (physics.js's collideWithObstacle)
+// instead of collideWithWall. No menu/countdown/lap/AI state — just physics,
+// camera, effects, audio, and the panel.
+// =====================================================================
+import * as THREE from "three";
+import { CONFIG } from "../shared/src/config.js";
+import { ASSETS, preloadAssets, buildPlayerCar, WHEEL } from "../shared/src/placeholders.js";
+import { TuningLab } from "../game/src/tuninglab.js";
+import { applyCarPhysics, loadCarProfiles } from "../game/src/carProfiles.js";
+import { CarPhysics, collideWithObstacle } from "../game/src/physics.js";
+import { Effects } from "../game/src/effects.js";
+import { GameAudio } from "../game/src/audio.js";
+
+const clamp = THREE.MathUtils.clamp;
+const info = document.getElementById("info");
+const PANEL_W = 320;
+
+function fail(msg) {
+  info.innerHTML = `<span id="err">${msg}</span>`;
+  window.__READY = "error: " + msg;
+}
+
+// ---------------------------------------------------------------------
+// Renderer / scene / lights — native res, no PS1 downsampling (this page
+// is for feeling out physics, not visual style).
+// ---------------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.shadowMap.enabled = true;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a2030);
+const camera = new THREE.PerspectiveCamera(CONFIG.camera.baseFov, 1, 0.1, 900);
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x445533, 0.9);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
+sun.position.set(30, 45, -20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -80; sun.shadow.camera.right = 80;
+sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
+scene.add(sun, sun.target);
+
+function resize() {
+  const w = Math.max(50, window.innerWidth - PANEL_W), h = window.innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+
+// ---------------------------------------------------------------------
+// Ground + static circular obstacles (collision via collideWithObstacle)
+// ---------------------------------------------------------------------
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(220, 220),
+  new THREE.MeshStandardMaterial({ color: 0x3a4356, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+scene.add(new THREE.GridHelper(220, 44, 0x5a6580, 0x2e3648));
+
+const OBSTACLE_DEFS = [
+  { cx: 20, cz: 10, radius: 2.0 }, { cx: -18, cz: 14, radius: 1.6 },
+  { cx: 10, cz: -25, radius: 2.4 }, { cx: -22, cz: -18, radius: 1.8 },
+  { cx: 35, cz: -5, radius: 2.2 }, { cx: -35, cz: 5, radius: 2.0 },
+  { cx: 5, cz: 35, radius: 1.5 }, { cx: -8, cz: -38, radius: 2.6 },
+  { cx: 45, cz: 25, radius: 1.7 }, { cx: -45, cz: -25, radius: 2.1 },
+];
+const obstacleMat = new THREE.MeshStandardMaterial({ color: 0xd6602a, roughness: 0.8 });
+const obstacles = OBSTACLE_DEFS.map((o) => {
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(o.radius, o.radius, 1.4, 20), obstacleMat);
+  mesh.position.set(o.cx, 0.7, o.cz);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  return o;
+});
+
+// ---------------------------------------------------------------------
+// Input — same key mapping as game/src/main.js's readInput()/keydown block.
+// ---------------------------------------------------------------------
+const keys = {};
+const isTyping = (e) => e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA");
+window.addEventListener("keydown", (e) => {
+  if (isTyping(e)) return;
+  if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
+  if (!e.repeat) handleKeyPress(e.code);
+  keys[e.code] = true;
+});
+window.addEventListener("keyup", (e) => {
+  if (isTyping(e)) return;
+  keys[e.code] = false;
+});
+function readInput() {
+  return {
+    throttle: keys.KeyW || keys.ArrowUp ? 1 : 0,
+    brake: keys.KeyS || keys.ArrowDown ? 1 : 0,
+    steer: (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0),
+    handbrake: keys.Space ? 1 : 0,
+  };
+}
+function handleKeyPress(code) {
+  if (code === "KeyM") audio.toggleMute();
+  if (code === "KeyR") resetToOrigin();
+  if (code === "KeyC") camState.mode = (camState.mode + 1) % CONFIG.camera.modes.length;
+}
+
+const camState = { mode: 0, yaw: 0, pitch: 0.26, zoom: 1, dragging: false, lastX: 0, lastY: 0, fov: CONFIG.camera.baseFov };
+renderer.domElement.addEventListener("mousedown", (e) => {
+  camState.dragging = true;
+  camState.lastX = e.clientX;
+  camState.lastY = e.clientY;
+});
+window.addEventListener("mouseup", () => (camState.dragging = false));
+window.addEventListener("mousemove", (e) => {
+  if (!camState.dragging) return;
+  const dx = e.clientX - camState.lastX, dy = e.clientY - camState.lastY;
+  camState.lastX = e.clientX;
+  camState.lastY = e.clientY;
+  camState.yaw -= dx * 0.006;
+  camState.pitch = clamp(camState.pitch - dy * 0.004, -0.1, 0.85);
+});
+renderer.domElement.addEventListener("wheel", (e) => {
+  camState.zoom = clamp(camState.zoom + e.deltaY * 0.0012, CONFIG.camera.zoomMin, CONFIG.camera.zoomMax);
+}, { passive: true });
+
+let audioReady = false;
+window.addEventListener("pointerdown", () => {
+  if (audioReady) return;
+  audioReady = true;
+  audio.init();
+  audio.resume();
+});
+
+// ---------------------------------------------------------------------
+// Car / physics / rig
+// ---------------------------------------------------------------------
+const SAVE_KEY = "pgp-tuninglab-car";
+const loadSavedCarId = () => {
+  const saved = localStorage.getItem(SAVE_KEY);
+  return ASSETS.carModels.some((c) => c.id === saved) ? saved : ASSETS.carModels[0].id;
+};
+
+const player = new CarPhysics();
+const effects = new Effects(scene);
+const audio = new GameAudio();
+let playerRig = null;
+let carProfiles = new Map();
+let selectedCarId = loadSavedCarId();
+
+const tuner = new TuningLab({
+  carModels: ASSETS.carModels.map((c) => ({ id: c.id, name: c.name })),
+  onCarChange: (carId) => switchCar(carId),
+});
+tuner.el.classList.remove("hidden"); // always open — no toggle key here
+
+function disposeDeep(root) {
+  root.traverse((o) => {
+    if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
+    if (o.material) {
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (m.userData?.shared) continue;
+        if (m.map) m.map.dispose();
+        m.dispose();
+      }
+    }
+  });
+}
+
+async function switchCar(carId) {
+  selectedCarId = carId;
+  localStorage.setItem(SAVE_KEY, carId);
+  applyCarPhysics(carId, carProfiles);
+  tuner.setCar(carId);
+  const newRig = await buildPlayerCar(carId);
+  newRig.group.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  if (playerRig) {
+    scene.remove(playerRig.group);
+    disposeDeep(playerRig.group);
+  }
+  scene.add(newRig.group);
+  playerRig = newRig;
+  resetToOrigin();
+}
+
+function resetToOrigin() {
+  player.reset(new THREE.Vector3(0, 0, 0), 0);
+  snapCamera();
+}
+
+// ---------------------------------------------------------------------
+// Rig pose — simplified from main.js's posePlayerRig: ground is always
+// flat (y=0, no slope), so no groundState smoothing/projection is needed.
+// ---------------------------------------------------------------------
+const rigState = { roll: 0, pitch: 0 };
+function posePlayerRig(dt) {
+  const p = player;
+  playerRig.group.position.set(p.pos.x, playerRig.lift, p.pos.z);
+  playerRig.group.rotation.set(0, p.heading, 0);
+  for (const sp of playerRig.steerPivots) sp.rotation.y = p.steer;
+  const base = (p.vLong / (WHEEL.radius * CONFIG.carScale)) * dt;
+  const dir = p.vLong >= 0 ? 1 : -1;
+  const extraF = dir * p.spinF * 14 * dt;
+  const extraR = dir * p.spinR * 14 * dt;
+  playerRig.spinPivots[0].rotation.x += base + extraF;
+  playerRig.spinPivots[1].rotation.x += base + extraF;
+  playerRig.spinPivots[2].rotation.x += base + extraR;
+  playerRig.spinPivots[3].rotation.x += base + extraR;
+
+  const targetRoll = clamp(-p.vLat * 0.05 - p.steer * Math.min(1, p.speed / 10) * 0.05, -0.15, 0.15);
+  const targetPitch = clamp(-p.aLong * 0.005, -0.07, 0.07);
+  const k = dt > 0 ? 1 - Math.exp(-dt * 8) : 1;
+  rigState.roll += (targetRoll - rigState.roll) * k;
+  rigState.pitch += (targetPitch - rigState.pitch) * k;
+  playerRig.tilt.rotation.z = rigState.roll;
+  playerRig.tilt.rotation.x = rigState.pitch;
+  playerRig.group.updateMatrixWorld(true);
+}
+
+// ---------------------------------------------------------------------
+// Camera — adapted from main.js's snapCamera/updateCamera with groundY
+// hardcoded to 0 (no track-based ground frame to query here).
+// ---------------------------------------------------------------------
+function snapCamera() {
+  const p = player;
+  const mode = CONFIG.camera.modes[camState.mode] ?? CONFIG.camera.modes[0];
+  const dist = (mode.dist || 5.8) * camState.zoom * CONFIG.carScale;
+  camState.yaw = 0;
+  camera.position.set(
+    p.pos.x - Math.sin(p.heading) * dist,
+    (mode.height || 2.3) * camState.zoom * CONFIG.carScale,
+    p.pos.z - Math.cos(p.heading) * dist
+  );
+  camera.lookAt(p.pos.x, 0.6, p.pos.z);
+}
+
+const camLook = new THREE.Vector3(), camDesired = new THREE.Vector3();
+function updateCamera(dt) {
+  const p = player;
+  const mode = CONFIG.camera.modes[camState.mode];
+  const C = CONFIG.camera;
+  let targetFov;
+  if (mode.name === "hood") {
+    const fx = Math.sin(p.heading), fz = Math.cos(p.heading);
+    camera.position.set(p.pos.x + fx * 0.15, playerRig.lift + 0.62, p.pos.z + fz * 0.15);
+    camLook.set(p.pos.x + fx * 12, 0.5, p.pos.z + fz * 12);
+    camera.lookAt(camLook);
+    targetFov = C.hoodFov + C.speedFov * Math.pow(p.speed / CONFIG.physics.maxSpeed, 1.5);
+  } else {
+    const dist = mode.dist * camState.zoom * CONFIG.carScale;
+    const height = (mode.height + camState.pitch * 4) * camState.zoom * CONFIG.carScale;
+    const ang = p.heading + camState.yaw;
+    camDesired.set(p.pos.x - Math.sin(ang) * dist, height, p.pos.z - Math.cos(ang) * dist);
+    camera.position.lerp(camDesired, 1 - Math.exp(-dt * C.lerp));
+    camLook.set(p.pos.x, 0.6, p.pos.z);
+    camera.lookAt(camLook);
+    targetFov = C.baseFov + C.speedFov * Math.pow(p.speed / CONFIG.physics.maxSpeed, 1.5);
+  }
+  const shake = effects.shake;
+  if (shake > 0.001) {
+    camera.position.x += (Math.random() - 0.5) * shake;
+    camera.position.y += (Math.random() - 0.5) * shake * 0.6;
+    camera.position.z += (Math.random() - 0.5) * shake;
+  }
+  camState.fov += (targetFov - camState.fov) * (1 - Math.exp(-dt * 4));
+  if (Math.abs(camera.fov - camState.fov) > 0.05) {
+    camera.fov = camState.fov;
+    camera.updateProjectionMatrix();
+  }
+}
+
+function gearAndRpm(v, throttle) {
+  const G = CONFIG.gearSpeeds;
+  if (v < -0.3) return { rpm: 0.3 + 0.5 * Math.min(1, -v / CONFIG.physics.maxReverse) };
+  if (v < 0.3) return { rpm: throttle ? 0.55 : 0.12 };
+  let g = 1;
+  while (g < G.length - 1 && v > G[g]) g++;
+  return { rpm: 0.25 + 0.72 * clamp((v - G[g - 1]) / (G[g] - G[g - 1]), 0, 1) };
+}
+
+// ---------------------------------------------------------------------
+// Per-frame step — physics substep + obstacle collision, effects/audio,
+// camera, rig pose. No menu/countdown/lap/AI/HUD: this is the whole loop.
+// ---------------------------------------------------------------------
+const surface = { grip: 1, drag: 0, power: 1, slope: 0 };
+function step(dt) {
+  const inp = readInput();
+
+  const steps = Math.max(1, Math.ceil(dt / (1 / 240)));
+  const h = dt / steps;
+  let impact = 0, impactNx = 0, impactNz = 0;
+  for (let i = 0; i < steps; i++) {
+    player.update(h, inp, surface);
+    for (const o of obstacles) {
+      const hit = collideWithObstacle(player, o.cx, o.cz, o.radius);
+      if (hit > impact) {
+        const dx = player.pos.x - o.cx, dz = player.pos.z - o.cz;
+        const dist = Math.hypot(dx, dz) || 1;
+        impact = hit; impactNx = dx / dist; impactNz = dz / dist;
+      }
+    }
+  }
+  if (impact > 2.5) {
+    audio.thud(impact / 8);
+    effects.impact(player.pos.x, 0.3, player.pos.z, impactNx, impactNz, impact);
+  }
+
+  posePlayerRig(dt);
+
+  const driveAnchors = CONFIG.physics.drivetrain === "rwd" ? playerRig.rearAnchors : playerRig.frontAnchors;
+  const sameAxle = driveAnchors === playerRig.rearAnchors;
+  effects.update(dt, {
+    rearSlideMark: player.drifting || (inp.handbrake && player.speed > 3) || (inp.brake && player.vLong > 12),
+    driveSpinMark: player.wheelspin > 0.3,
+    frontSlideMark: player.frontPush > 0.3,
+    drifting: player.drifting,
+    burnout: player.wheelspin > 0.35,
+    frontScrub: player.frontPush > 0.35,
+    onRoad: true,
+    speed: player.speed,
+    vel: player.vel,
+    rearAnchors: playerRig.rearAnchors,
+    driveAnchors,
+    frontAnchors: playerRig.frontAnchors,
+    groundYAt: () => 0,
+  });
+
+  const { rpm } = gearAndRpm(player.vLong, inp.throttle);
+  audio.setEngine(Math.min(1, rpm + player.wheelspin * 0.3), inp.throttle);
+  const skidAmount = clamp((Math.abs(player.slip) - 0.08) * 2.5, 0, 1) * clamp(player.speed / 8, 0, 1);
+  audio.setSkid(Math.max(
+    skidAmount,
+    inp.handbrake && player.speed > 4 ? 0.55 : 0,
+    player.wheelspin * 0.7,
+    player.frontPush * 0.7
+  ));
+  audio.setWind(player.speed / CONFIG.physics.maxSpeed);
+
+  updateCamera(dt);
+
+  info.innerHTML =
+    `<b>${ASSETS.carModels.find((c) => c.id === selectedCarId)?.name ?? selectedCarId}</b>\n` +
+    `${(player.speed * CONFIG.speedDisplayScale).toFixed(0)} (arcade units)\n` +
+    `<b>W/A/S/D</b> drive &middot; <b>Space</b> handbrake &middot; <b>R</b> reset\n` +
+    `<b>C</b> camera &middot; <b>M</b> mute &middot; drag mouse to orbit &middot; click to enable audio`;
+}
+
+// ---------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------
+async function init() {
+  resize();
+  try {
+    const [, profiles] = await Promise.all([preloadAssets(), loadCarProfiles()]);
+    carProfiles = profiles;
+    // Auto-discovered cars (game/src/placeholders.js's discoverCarModels)
+    // only exist in ASSETS.carModels once preloadAssets() above resolves —
+    // the dropdown and the saved-car lookup were both built/run before that,
+    // so refresh/redo them now that the full list is in.
+    tuner.setCarModels(ASSETS.carModels.map((c) => ({ id: c.id, name: c.name })));
+    selectedCarId = loadSavedCarId();
+    applyCarPhysics(selectedCarId, carProfiles);
+    tuner.setCar(selectedCarId);
+    playerRig = await buildPlayerCar(selectedCarId);
+    playerRig.group.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    scene.add(playerRig.group);
+  } catch (err) {
+    console.error(err);
+    return fail("Failed to load car assets. Serve this folder over HTTP, e.g. <code>python3 -m http.server</code> from the repo root.");
+  }
+  resetToOrigin();
+
+  let lastTime = performance.now();
+  let frames = 0;
+  renderer.setAnimationLoop(() => {
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+    step(dt);
+    renderer.render(scene, camera);
+    if (++frames === 2) window.__READY = true;
+  });
+}
+
+init().catch((e) => fail(e.message));
+</script>
+</body>
+</html>
