@@ -32,7 +32,7 @@ game/                 THE SHIPPED GAME — no editor/tooling code, only ../share
   assets/models/        3D props + models/cars/
 shared/                CODE SHARED between game/ and editor/ — no duplication, no drift
   src/                  config.js, placeholders.js, spline.js, track.js, trackObjects.js,
-                        environment.js, crowd.js
+                        barriers.js, environment.js, crowd.js
 editor/                YOU ARE HERE — everything authoring-related
   forge/index.html      Scene Forge — photo→low-poly-asset tool (human polish stage)
   editor.html, crowdEditor.html, sketch.html   standalone track/crowd editors (share
@@ -52,6 +52,13 @@ editor/                YOU ARE HERE — everything authoring-related
   tools/                 headless CLIs (Node; `three` pinned to the game's 0.160.0)
   schemas/                JSON Schemas for the data formats
 ```
+
+**Setup:** `npm install` in `editor/`, then make the deps resolvable from the repo
+root — `ln -s editor/node_modules node_modules`. The tools import `../../shared/`
+and `../../game/` code, and Node resolves bare specifiers (`three`) upward from
+the *importing* file, so with `package.json` only in `editor/` nothing under
+`shared/` can find `three`. `tools/lib/browser.js` also needs Node >= 22
+(`fs.globSync`).
 
 ## Tools (run from `editor/`; each spawns its own dev server rooted at the repo root)
 
@@ -190,5 +197,5 @@ loaded here prefill the livery dialog. Headless handles for tools:
   done (paint-car.py); trackside texture generation is what remains.
 - **Phase 4**: crowd-kit JSON schema, `manifest.json` fallback for static hosting,
   drive-test with per-car physics presets (blocked on car kits carrying physics as data).
-- Game-side: AI opponents disabled (`config.js ai.enabled`); several `medalAvgSpeed`
-  targets appear unreachable with the current baseline car (see drive-test output).
+- Game-side: several `medalAvgSpeed` targets appear unreachable with the current
+  baseline car (see drive-test output).
