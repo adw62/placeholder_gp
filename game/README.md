@@ -17,12 +17,16 @@ placeholder designed to be swapped for real art without touching game code
 
 Needs an HTTP server — ES modules + GLTF loading don't work over `file://`,
 and several features (levels/, crowd kits, ribbon/cutout texture folders)
-rely on the dev server returning a directory listing, which Python's does:
+rely on the dev server returning a directory listing, which Python's does.
+`src/main.js`'s imports reach two levels up (`../../shared/src/...`), which
+a browser resolves to `<server root>/shared/src/...` — so the server root
+must be **this repo's top level**, not `game/` itself, or those imports
+404:
 
 ```bash
-cd game
+cd .. # repo root, if you're in game/
 python3 -m http.server 8000
-# open http://localhost:8000
+# open http://localhost:8000/game/index.html
 ```
 
 ## Controls
@@ -33,7 +37,8 @@ python3 -m http.server 8000
 | A/D / ←→ | Steer |
 | Space | Handbrake |
 | C | Cycle camera | R | Reset to checkpoint | Esc | Pause | M | Mute |
-| F | Perf overlay (frame time avg/worst, draw calls, triangles) |
+| F | Perf overlay (frame time, draw calls, triangles, barrier clearance) |
+| G | Collision wireframe — see "Barrier collision" below |
 | Mouse drag/wheel | Orbit/zoom chase camera |
 
 ## Architecture
@@ -43,8 +48,21 @@ index.html          Race UI shell + importmap
 src/
   tracks.js         Built-in track/level definitions — pure data
   physics.js        Two-axle Pacejka bicycle model
-  ai.js             Spline-following opponents (currently disabled, see CONFIG.ai.enabled)
-  effects.js        Skid marks, particles, camera shake
+  ai.js             AI opponents — each drives a real CarPhysics instance (same
+                    tire model/wall collision/substep rate as the player) via
+                    pure-pursuit steering targeting track.vtAI's speed table,
+                    a stuck/reverse recovery loop, and a per-corner "spline
+                    assist" that reins in slip on most (not all — some spins
+                    are kept on purpose) corners. See CONFIG.ai.
+  damage.js         Crash-damage vertex deformation (crumple) for any car rig,
+                    used on both the player and AI on hard wall/car impacts.
+                    Each vertex has its own displacement cap, ramped by where
+                    it sits in the body: nose/tail crumple, the middle of the
+                    cell barely moves (crush structure vs. stiff cell)
+  collisionDebug.js Wireframe overlay (G): the actual barrier segments physics
+                    collides against + each car's footprint box. Built per race
+  effects.js        Skid marks, point particles (smoke/dust/sparks), tumbling
+                    paint-chip shards on impact, camera shake
   audio.js          Procedural WebAudio (engine/skid/wind/impacts/UI)
   hud.js            DOM HUD, minimap, menus, results
   tuninglab.js      Physics/audio tuning panel — lives in ../editor/tuningLab.html
@@ -64,6 +82,7 @@ src/
   track.js             Main-track-only: road ribbon/checkpoints/AI-line/minimap
   spline.js            Generic open/closed Catmull-Rom sampling (main track + extraSplines)
   trackObjects.js       Rule-based trackside object placement (bands + points)
+  barriers.js          Collidable barriers as world-space segments (see below)
   environment.js       Theme + terrain + ambient scatter (trees/rocks/billboards)
   crowd.js              Shared crowd-figure rigging (used by race + crowdEditor.js)
 ```
@@ -163,13 +182,14 @@ Shares generation code with the race, so what you see is what races.
   from `ASSETS.ribbonFolders.barrier` (auto-discovered folder, baked into
   one shared atlas so any number of variants stays one draw call).
 - **`barrier` / `splineBarrier` / `tireBarrier` are physically collidable** —
-  the physics wall (`shared/src/track.js`'s `wallDistAt`, sourced from
-  `trackObjects.js`'s `computeWallProfile`) narrows in to match wherever one
-  of these bands is actually placed, per sample and per side (closest one
-  wins if they overlap, e.g. a tire stack in front of the main barrier).
-  Custom `offset` on these bands isn't just visual anymore — it's exactly
-  where the car will stop. A stretch with none of these bands keeps the
-  flat `halfW + wallMargin` fallback, same as always.
+  `trackObjects.js`'s `computeWallProfile` narrows the wall in to match
+  wherever one of these bands is actually placed, per sample and per side
+  (closest wins if they overlap, e.g. a tire stack in front of the main
+  barrier), offset by the prop's own size so the wall lands on the surface
+  you can see rather than its origin. Custom `offset` isn't just visual —
+  it's where the car stops. A stretch with none of these bands keeps the flat
+  `halfW + wallMargin` fallback. What those distances then become is
+  "Barrier collision" below.
 - **Spline Tarmac** — flat surface ribbon (pit aprons, side streets, piazzas).
   `scaleX` is the strip width in meters, `offset` the strip center, `spacing`
   the meters per texture repeat. The band's `tex` field (JSON only) names a
@@ -230,8 +250,9 @@ Note: car physics is still planar — slopes affect visuals only, not handling y
   opponent independently picks one at random (`randomCarId()`). Model faces
   **+Z**, kart scale (~1.4m). `CONFIG.carScale` is the one "resize the car"
   knob — physics, visuals, and camera all derive from it, so nothing else
-  needs hand-tuning to match. AI opponents are deliberately *not* scaled by
-  it. New cars come from the asset pipeline (`../editor/PIPELINE.md`): a
+  needs hand-tuning to match. AI opponents are scaled by it too (same rig
+  size as the player, since they now drive the same physics body — see
+  "Handling model" below). New cars come from the asset pipeline (`../editor/PIPELINE.md`): a
   `../editor/work/cars/*.carkit.json` through `../editor/tools/build-car.js`, or traced from a
   photo entirely inside Scene Forge (🚗 From photo / 🎨 Auto livery) — either
   way exported to `assets/models/cars/<id>.gltf`, selectable next reload with
@@ -248,6 +269,10 @@ Note: car physics is still planar — slopes affect visuals only, not handling y
   - `wheelOffset` optionally overrides the shared `WHEEL` position
     (`localX`/`frontZ`/`rearZ`/`localY`, in `buildPlayerCar`) for a car whose
     body proportions don't match the shared default.
+  - `scale` optionally multiplies `CONFIG.carScale` for just this car (e.g.
+    Red #11 ships at `0.9`) — rig size only (`buildPlayerCar`/
+    `buildOpponentCar`, both player and AI honor it), not the shared physics
+    tuning (collision radius/wheelbase stay uniform across cars).
 - **Props** — drop a `.glb` in `assets/models/`, register in `ASSETS.models`
   (`tree`, `rock`, `billboard`, `barrier`, `apexKerb`, `tireBarrier`,
   `building`). Left commented out by default — pointing at a missing file
@@ -300,6 +325,17 @@ friction ellipse per axle. All classic behaviors are *emergent*:
   skid-mark/smoke/audio cues, so understeer is felt and heard, not just
   simulated.
 
+**Contact never adds velocity.** Hitting a wall or a tuning-lab obstacle is
+fully inelastic (`collideWithWall`): the car is pushed out of the surface and
+only the *into-surface* component of its velocity is cancelled — along-surface
+motion is untouched. There is no restitution term and no speed scrub, so a
+graze neither kicks the car off its line nor costs it a flat percentage of
+speed; it scrapes and carries on. (The scrub used to be 6% of total speed *per
+substep* of contact, 240 a second — a 15° brush with the throttle pinned went
+from 9.45 m/s to 0.16 m/s within two seconds.) Car-vs-car is position-only for
+the same reason — see `CONFIG.ai.bump`. Impact speed is still reported, so
+damage, sparks and the thud all still fire; only the velocity response is gone.
+
 On top sits a **GT1/2-style assist layer** (all in the tuning lab under
 "Assists & Aero"; all at 0 = raw sim):
 
@@ -322,10 +358,101 @@ breakaway is. Below `vBlend`, blends to kinematic steering (standard
 low-speed fix for this model class). Integrated at 240Hz substeps (stiff
 ODE).
 
+## AI opponents
+
+`src/ai.js`'s `AIRacer` drives a real `CarPhysics` instance — the same tire
+model, wall collision, and 240Hz substep rate the player uses, not a
+kinematic spline-follower — so AI cars slip, slide, and can genuinely crash
+or get stuck like the player can:
+
+- **Driving**: pure-pursuit steering toward a lookahead point on the car's
+  own preferred lane (`CONFIG.ai.offsets` + a slow sinusoidal wander),
+  speed targeted against `track.js`'s `vtAI` table (per-sample cornering
+  limit with braking lookahead, tuned by `CONFIG.ai.lateralAccel`/`brake`/
+  `maxSpeed`), scaled by a per-opponent skill factor and mild rubber-banding
+  (`CONFIG.ai.rubberBand`) so the pack stays close without it being obvious.
+- **Corner assist**: raw physics alone spins an AI out on tight corners
+  reasonably often — a little of that is good texture, too much just reads
+  as broken driving. On ~90% of corners (`CONFIG.ai.cornerAssist.chance`,
+  rolled once per corner so it's consistent for the corner's whole
+  duration, not flickering mid-turn) the car's heading gets nudged toward
+  the spline tangent and its lateral slip bled off; the rest run on
+  completely raw physics, so real spins still happen on purpose.
+- **Stuck recovery**: ported from `../editor/tools/drive-test.js`'s proven
+  headless-validator logic — sustained low speed past a startup grace
+  period triggers a few seconds of brake-only reverse, then a resume,
+  repeating indefinitely (unlike the headless tool, a live AI never "gives
+  up").
+- **Player-vs-AI collision** (`main.js`'s bump block): cars are checked as
+  oriented rectangles around their own heading (`obbOverlap`, a small SAT
+  implementation), not a single collision radius — a car is much longer
+  than it is wide, so one radius is either too small nose-to-tail or too
+  cautious side-by-side. Contact is **position-only**: overlap gets
+  resolved every frame (split unevenly via `CONFIG.ai.bump.pushPlayerShare`/
+  `pushAiShare` so the AI consistently gives up a bit more ground — "equal
+  but a little in the player's favour") with no added velocity and no
+  per-frame speed drain, so two cars can rub doors and slide past each
+  other without bouncing off or stalling out. Hard contact (wall or car)
+  still triggers `damage.js`'s crumple deformation and an `effects.js`
+  spark burst on both the player and whichever AI was involved.
+
+## Barrier collision
+
+`shared/src/barriers.js` bakes the wall into **world-space polylines**, one per
+side, once per track — from the same per-sample distances `computeWallProfile`
+produces. `physics.js`'s `collideWithBarriers` then does box-vs-segment SAT
+against those segments, and `collisionDebug.js` (G) draws the very same
+segments, so the debug fence and the collision surface are one dataset and
+cannot disagree.
+
+This replaced a curvilinear test (project the car onto the spline, compare its
+lateral against the wall's). That frame is degenerate near a tight corner's
+inside — equal-lateral curves bunch toward the centre of curvature — while the
+car is a rigid ~2 m box in world space, so every way of bridging the two was an
+approximation whose error grew with curvature × car length. Collision fired with
+visible daylight on tight corners however it was patched. Box-vs-segment in
+world space needs no frame conversion and is exact at any radius.
+
+Working in real geometry does mean the polyline itself has to be valid, and
+`buildBarriers` enforces three things a lateral-distance test could ignore:
+
+- **Fold cap.** An offset only traces a valid parallel curve while it stays
+  inside the local radius on the concave face; past that it folds through the
+  centre of curvature and its segments lie tangled across the track. Capped at
+  90% of the radius.
+- **Slope limit.** A step in distance (a band starting/ending) becomes a segment
+  running *radially* across the track, which the car hits edge-on like a
+  kerbstone. The profile tapers at most 0.2 m per sample; relaxing with `min()`
+  only pulls the wall in, so a taper can't open a drivable gap.
+- **Knot skip** (`MIN_BARRIER_RADIUS`). Where the barrier's *own* radius would
+  fall under 1.5 m, the "wall" is a sub-metre loop almost centred on the
+  corner's centre — normals there are ill-defined. Those segments are dropped,
+  leaving that stretch uncontained rather than fabricating a tangle. Purely
+  geometric, so it generalises: a wide oval drops nothing, Circuito di Roma
+  drops 11 of 1400 at one hairpin, a 6 m ring with a 5 m offset drops 39%. If a
+  track needs a barrier there, the corner is too tight for its offset.
+
+Two safety rails in `collideWithBarriers`: overlaps deeper than a car length are
+treated as bad data and ignored (a backwards normal on a pathological curve
+would otherwise hurl the car metres sideways), and extraction is capped per
+substep so resolving a large overlap can't teleport the car.
+
+What collides is the car's oriented footprint (`carHalfLength`/`carHalfWidth`,
+the same rectangle the car-vs-car bump uses), deliberately ~91% of the tightest
+rigged car so contact reads as touching rather than stopping short.
+
+**Debug view (G)** — `collisionDebug.js` draws the collision segments as a
+fence, magenta where a barrier band sets the distance and blue where it's the
+flat fallback, plus each car's footprint box (green player, yellow AI). Depth
+testing is off so the fence shows *through* the barrier art it should line up
+with, and it's clipped to a window around the car. The F overlay's `clr` reading
+comes from the same routine collision uses: `0.00` is touching, anything
+positive means the car is not in contact.
+
 ## Race structure
 
 Menu → countdown → race (vs AI if `config.js`'s `ai.enabled` (`../shared/src/config.js`), currently
-`false`) → checkpoint-validated laps (R resets to last checkpoint, no
+`true`) → checkpoint-validated laps (R resets to last checkpoint, no
 shortcuts) → results with medals, drift score, and persistent best laps
 (localStorage, keyed by track id).
 
