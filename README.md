@@ -19,9 +19,9 @@ Start here:
 - Editing shared behavior (physics tuning, trackside object placement, the asset
   registry) → `shared/src/`, changes apply to both sides automatically
 
-Because `editor/` reaches across into `game/` and `shared/` by relative path (and
-Scene Forge/the standalone editors need to reach `shared/`), serve pages that live
-under `editor/` from **this directory** (`python3 -m http.server 8000`, then open
-e.g. `/editor/editor.html` or `/editor/forge/index.html`). `game/` is otherwise
-self-contained aside from its one dependency on `../shared/`, and can be served on
-its own for interactive play (`cd game && python3 -m http.server 8000`).
+Both `editor/` and `game/` reach across into `shared/` by relative path (e.g.
+`game/src/main.js` imports `../../shared/src/config.js`), which a browser
+resolves relative to the server root — so **always serve from this
+directory** (`python3 -m http.server 8000`), never from `editor/` or `game/`
+themselves, or those imports 404. Then open e.g. `/editor/editor.html`,
+`/editor/forge/index.html`, or `/game/index.html`.
