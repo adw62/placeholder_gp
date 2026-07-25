@@ -19,6 +19,7 @@
 
 import * as THREE from "three";
 import { CONFIG } from "../../shared/src/config.js";
+import { SEG_STRIDE } from "../../shared/src/barriers.js";
 
 const clamp = THREE.MathUtils.clamp;
 const G = 9.81;
@@ -261,31 +262,113 @@ export class CarPhysics {
   }
 }
 
-// Keeps the car inside the barriers. Returns impact speed (m/s) when a
-// wall was hit hard enough to care, else 0.
-export function collideWithWall(car, q, wallDist) {
+// Distance from the car's center to its own outline along unit direction
+// (nx, nz) — its oriented footprint (CONFIG.physics.carHalfLength/
+// carHalfWidth, carScale-scaled) projected onto that direction. Identical
+// projection to the one main.js's obbOverlap takes per SAT axis:
+// hl·|forward·n| + hw·|side·n|, with side = (fz, -fx).
+export function halfExtentAlong(heading, nx, nz) {
   const P = CONFIG.physics;
-  const limit = wallDist - P.carRadius * CONFIG.carScale;
-  if (Math.abs(q.lateral) <= limit) return 0;
-  const sgn = Math.sign(q.lateral);
-  const nx = q.s.side.x * sgn, nz = q.s.side.z * sgn; // outward normal
-  const overshoot = Math.abs(q.lateral) - limit;
-  car.pos.x -= nx * overshoot;
-  car.pos.z -= nz * overshoot;
+  const hl = P.carHalfLength * CONFIG.carScale, hw = P.carHalfWidth * CONFIG.carScale;
+  const fx = Math.sin(heading), fz = Math.cos(heading);
+  return hl * Math.abs(fx * nx + fz * nz) + hw * Math.abs(fz * nx - fx * nz);
+}
+
+// World-space point where a car's outline meets whatever it hit, given a
+// `normal` pointing from the car's CENTER toward the hit. Everything that
+// visualises an impact has to agree on this: emitting sparks and chips from
+// the car's center (which is what main.js used to pass) puts the burst inside
+// the bodywork instead of at the contact patch, reading as detached from the
+// hit — while damage.js's crumple was already offsetting correctly, so the
+// dent and the sparks disagreed. Allocates, which is fine: callers are the
+// gated impact events, not per-frame code.
+export function contactPoint(pos, heading, nx, nz) {
+  const r = halfExtentAlong(heading, nx, nz);
+  return { x: pos.x + nx * r, z: pos.z + nz * r };
+}
+
+// ---------------------------------------------------------------------
+// Barrier collision: oriented box vs world-space segments (shared/src/
+// barriers.js). Replaces a curvilinear test whose frame went degenerate on
+// tight corners; this is exact at any radius.
+// ---------------------------------------------------------------------
+const _hit = { pen: -Infinity, nx: 0, nz: 0 };
+const MAX_PLAUSIBLE_PEN = 1.0;    // deeper than this is bad data, not contact
+const MAX_PUSH_PER_STEP = 0.05;   // per substep, so resolution can't teleport
+
+// Deepest penetration of the footprint past any nearby barrier segment, plus
+// that segment's outward normal. Positive = overlapping, negative = clearance.
+export function barrierPenetration(car, barriers, scratch) {
+  const P = CONFIG.physics;
+  const hl = P.carHalfLength * CONFIG.carScale, hw = P.carHalfWidth * CONFIG.carScale;
+  const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+  const sx = fz, sz = -fx;
+  const cx = car.pos.x, cz = car.pos.z;
+  const list = barriers.near(cx, cz, scratch);
+  const segs = barriers.segs;
+
+  _hit.pen = -Infinity; _hit.nx = 0; _hit.nz = 0;
+  for (let i = 0; i < list.length; i++) {
+    const o = list[i] * SEG_STRIDE;
+    const ax = segs[o], az = segs[o + 1];
+    const nx = segs[o + 4], nz = segs[o + 5];
+    const ex = segs[o + 6], ez = segs[o + 7], len = segs[o + 8];
+
+    // Separating-axis test on all FOUR axes: the segment's direction, its
+    // normal, and the box's two. Skipping the box's axes lets a segment's
+    // infinite LINE trigger a hit when the box sits diagonally past its end —
+    // up to 0.5 m of phantom contact wherever the barrier stops.
+    const u = (cx - ax) * ex + (cz - az) * ez;
+    const halfAlong = hl * Math.abs(fx * ex + fz * ez) + hw * Math.abs(sx * ex + sz * ez);
+    if (u + halfAlong < 0 || u - halfAlong > len) continue;
+    // ...and the box's own axes, against the segment's two endpoints.
+    const bx = segs[o + 2], bz = segs[o + 3];
+    const af = (ax - cx) * fx + (az - cz) * fz, bf = (bx - cx) * fx + (bz - cz) * fz;
+    if ((af > hl && bf > hl) || (af < -hl && bf < -hl)) continue;
+    const as = (ax - cx) * sx + (az - cz) * sz, bs = (bx - cx) * sx + (bz - cz) * sz;
+    if ((as > hw && bs > hw) || (as < -hw && bs < -hw)) continue;
+
+    // Across it: how far past the surface does the box reach?
+    const d = (cx - ax) * nx + (cz - az) * nz; // signed, negative = road side
+    const support = hl * Math.abs(fx * nx + fz * nz) + hw * Math.abs(sx * nx + sz * nz);
+    const pen = d + support;
+    // At 240 Hz a legitimate new overlap is under 5 cm, so anything near a car
+    // length means this segment's data is wrong here (a normal that came out
+    // backwards on a pathological offset curve). Acting on it hurls the car
+    // metres sideways; ignoring it just leaves that scrap non-collidable.
+    if (pen > MAX_PLAUSIBLE_PEN) continue;
+    if (pen > _hit.pen) { _hit.pen = pen; _hit.nx = nx; _hit.nz = nz; }
+  }
+  return _hit;
+}
+
+// Keeps the car inside the barriers, resolving the deepest overlap. Returns
+// impact speed (m/s) when hit hard enough to care, else 0.
+export function collideWithBarriers(car, barriers, scratch) {
+  const hit = barrierPenetration(car, barriers, scratch);
+  if (hit.pen <= 0) return 0;
+  const nx = hit.nx, nz = hit.nz;
+  // Resolve GRADUALLY — undoing a large overlap in one substep reads as the car
+  // being teleported. Capped, extraction still runs at ~12 m/s (cap x 240 Hz),
+  // clearing any real overlap in hundredths of a second.
+  const push = Math.min(hit.pen, MAX_PUSH_PER_STEP);
+  car.pos.x -= nx * push;
+  car.pos.z -= nz * push;
   const vn = car.vel.x * nx + car.vel.z * nz;
   if (vn > 0) {
-    car.vel.x -= nx * vn * (1 + P.wallRestitution);
-    car.vel.z -= nz * vn * (1 + P.wallRestitution);
-    car.vel.multiplyScalar(0.94); // scrub some speed on contact
+    // Fully inelastic, same as before: cancel only the into-wall component,
+    // leave along-wall motion alone. No restitution, no speed scrub.
+    car.vel.x -= nx * vn;
+    car.vel.z -= nz * vn;
     return vn;
   }
   return 0;
 }
 
-// Same push-out + restitution response as collideWithWall, but against a
+// Same push-out + inelastic response as collideWithBarriers, but against a
 // static circular obstacle (cx, cz, radius) instead of a spline-based wall —
 // used by editor/tuningLab.html's open plane, which has no track to query.
-// The sign flips vs. collideWithWall throughout: a wall's forbidden zone is
+// The sign flips vs. collideWithBarriers throughout: a wall's forbidden zone is
 // "beyond a limit distance", an obstacle's is "within a radius", so the
 // outward normal and the overshoot/approach tests both invert.
 export function collideWithObstacle(car, cx, cz, radius) {
@@ -300,9 +383,9 @@ export function collideWithObstacle(car, cx, cz, radius) {
   car.pos.z += nz * overshoot;
   const vn = car.vel.x * nx + car.vel.z * nz;
   if (vn < 0) { // moving toward the obstacle's center
-    car.vel.x -= nx * vn * (1 + P.wallRestitution);
-    car.vel.z -= nz * vn * (1 + P.wallRestitution);
-    car.vel.multiplyScalar(0.94);
+    // Inelastic, same as collideWithBarriers — no bounce, no speed scrub.
+    car.vel.x -= nx * vn;
+    car.vel.z -= nz * vn;
     return -vn;
   }
   return 0;

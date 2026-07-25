@@ -11,7 +11,7 @@ import { loadLevels } from "./levels.js";
 import { buildTrack } from "../../shared/src/track.js";
 import { buildEnvironment, applyTheme, mulberry32, hashSeed } from "../../shared/src/environment.js";
 import { buildAllTrackObjects } from "../../shared/src/trackObjects.js";
-import { CarPhysics, collideWithWall } from "./physics.js";
+import { CarPhysics, collideWithBarriers, barrierPenetration, contactPoint } from "./physics.js";
 import { AIRacer } from "./ai.js";
 import { Effects } from "./effects.js";
 import { GameAudio } from "./audio.js";
@@ -19,8 +19,14 @@ import { HUD, fmtTime } from "./hud.js";
 import { applyCarPhysics, loadCarProfiles } from "./carProfiles.js";
 import { preloadAssets, buildPlayerCar, WHEEL, updateCrowdBillboard, ASSETS, randomCarId } from "../../shared/src/placeholders.js";
 import { mergeStaticGroup } from "./batching.js";
+import { makeDamageable, damageCarAt } from "./damage.js";
+import { CollisionDebug } from "./collisionDebug.js";
 
 const clamp = THREE.MathUtils.clamp;
+
+// Reused segment-index list for barrier queries (barriers.near fills it) —
+// hot path, called per physics substep for the player and every AI.
+const segScratch = [];
 
 // TRACKS plus whatever init() finds in levels/ — menu and the ?track= dev
 // shortcut read this so a user-generated level is indistinguishable from a built-in one.
@@ -155,6 +161,10 @@ function handleKeyPress(code) {
   if (code === "KeyM") audio.toggleMute();
   if (code === "KeyF") togglePerf();
   if (!race) return;
+  if (code === "KeyG") {
+    collisionDebugOn = !collisionDebugOn;
+    collisionDebug?.setVisible(collisionDebugOn);
+  }
   if (code === "KeyC") camState.mode = (camState.mode + 1) % CONFIG.camera.modes.length;
   if (code === "KeyR" && race.state === "racing") respawn();
   if (code === "Escape" && (race.state === "racing" || race.state === "countdown") && !race.finishedShown) {
@@ -213,6 +223,11 @@ const audio = new GameAudio();
 // Car-profile discovery (game/carProfiles/*.json, tuned in editor/tuningLab.html)
 // — populated in init(), applied by applyCarPhysics() in setPlayerCar() below.
 let carProfiles = new Map();
+// Collision wireframe (G). The overlay itself is per-race (its wall geometry
+// is baked from that track's profile), but the toggle is module-level so it
+// survives a restart — you're usually looking at the same corner again.
+let collisionDebug = null;
+let collisionDebugOn = false;
 let playerRig = null;
 let selectedCarId = loadSelectedCarId();
 let race = null;
@@ -229,6 +244,9 @@ async function setPlayerCar(carId) {
   applyCarPhysics(carId, carProfiles);
   const wasVisible = playerRig?.group.visible ?? false;
   const newRig = await buildPlayerCar(carId);
+  // Per-instance geometry clones (see damage.js) so crash damage on this
+  // car never bleeds into the shared cachedClone() source or any other rig.
+  newRig.damageMeshes = makeDamageable(newRig.body);
   if (playerRig) {
     scene.remove(playerRig.group);
     disposeDeep(playerRig.group);
@@ -297,6 +315,8 @@ function teardownRace() {
     disposeDeep(a.group);
   }
   race.effects.dispose();
+  collisionDebug?.dispose();
+  collisionDebug = null;
   audio.stopRaceSounds();
   race = null;
 }
@@ -341,6 +361,13 @@ function startRace(def) {
   scene.add(objects);
   const effects = new Effects(scene);
   effects.setPixelScale(sizeState.ih / Math.max(1, sizeState.h));
+
+  // Collision wireframe (G) — built from this track's baked wall profile.
+  // Added after buildEnvironment/buildAllTrackObjects but before the batching
+  // pass below, which only merges those two groups, so it's never swallowed.
+  collisionDebug = new CollisionDebug(scene);
+  collisionDebug.buildWall(track);
+  collisionDebug.setVisible(collisionDebugOn);
 
   // --- draw-call batching (batching.js): merge static props into one mesh
   // per 70 m chunk. The editor keeps individual meshes; only the race merges. ---
@@ -441,7 +468,7 @@ function startRace(def) {
     staticBatches, bakeFrames: 0,
     state: "countdown", countT: 3.999, beeped: 4,
     raceT: 0, lapStartT: 0, lapsDone: 0, cp: 0, lapTimes: [],
-    lastIdx: 0, bumpCd: 0,
+    lastIdx: 0, bumpCd: 0, aiWallAudioCd: 0,
     driftChain: 0, driftEnd: 0, driftTotal: 0,
     wrongWayT: 0, finishT: 0, finishedShown: false, finalPos: 4,
     newRecord: false,
@@ -477,9 +504,13 @@ function finishRace() {
 
 function currentPosition() {
   const r = race;
-  const q = r.track.query(r.player.pos, r.lastIdx);
+  // queryProjected + arc (not query + idx/N): the AI's own `progress` is
+  // continuous arc/length, so measuring the player in sample-index steps
+  // made the two sides of this comparison differently quantized — worth
+  // ~0.5 m of phantom lead/deficit right at a position swap.
+  const q = r.track.queryProjected(r.player.pos, r.lastIdx);
   const region = Math.floor(q.idx / (r.track.samples.length / r.track.ncp)) % r.track.ncp;
-  const within = region === r.cp ? q.idx / r.track.samples.length : r.cp / r.track.ncp;
+  const within = region === r.cp ? q.arc / r.track.length : r.cp / r.track.ncp;
   const score = r.lapsDone + within;
   return 1 + r.ai.filter((a) => a.progress > score).length;
 }
@@ -571,28 +602,10 @@ const _groundPos = new THREE.Vector3(), _groundTan = new THREE.Vector3(), _gq = 
 
 // Continuous closest-point projection of a world position onto the track
 // polyline — shared by the player ground frame and effects ground queries.
+// (shared/src/spline.js's queryProjected — also what wall collision uses.)
 function projectArcLat(pos) {
-  const q = race.track.query(pos, race.lastIdx);
-  const samples = race.track.samples;
-  const N = samples.length;
-  let bestD2 = Infinity, arc = q.s.arc, lat = q.lateral;
-  for (let k = -1; k <= 0; k++) {
-    const sa = samples[(q.idx + k + N) % N], a = sa.p;
-    const b = samples[(q.idx + k + 1 + N) % N].p;
-    const ex = b.x - a.x, ez = b.z - a.z;
-    const len2 = ex * ex + ez * ez;
-    if (len2 < 1e-12) continue;
-    const u = clamp(((pos.x - a.x) * ex + (pos.z - a.z) * ez) / len2, 0, 1);
-    const dx = pos.x - (a.x + ex * u), dz = pos.z - (a.z + ez * u);
-    const d2 = dx * dx + dz * dz;
-    if (d2 < bestD2) {
-      bestD2 = d2;
-      const len = Math.sqrt(len2);
-      arc = sa.arc + u * len;
-      lat = (dx * ez - dz * ex) / len; // signed distance, side = (t.z, -t.x)
-    }
-  }
-  return { arc, lat };
+  const q = race.track.queryProjected(pos, race.lastIdx);
+  return { arc: q.arc, lat: q.lateral };
 }
 
 function playerGroundFrame() {
@@ -707,7 +720,12 @@ function updateCamera(dt) {
     const ang = p.heading + camState.yaw;
     camDesired.set(p.pos.x - Math.sin(ang) * dist, groundY + height, p.pos.z - Math.cos(ang) * dist);
     camera.position.lerp(camDesired, 1 - Math.exp(-dt * C.lerp)); // exponential: uniform smoothing even when dt varies
-    camLook.set(p.pos.x, groundY + 0.6, p.pos.z);
+    // Bias the look target ahead of the car along its heading, scaled by
+    // speed (0 parked, full at top speed) so the camera reads more of
+    // where the car is going instead of centering on the car itself.
+    const lookAhead = (mode.lookAhead ?? 0) * clamp(p.speed / CONFIG.physics.maxSpeed, 0, 1);
+    const hfx = Math.sin(p.heading), hfz = Math.cos(p.heading);
+    camLook.set(p.pos.x + hfx * lookAhead, groundY + 0.6, p.pos.z + hfz * lookAhead);
     camera.lookAt(camLook);
     targetFov = C.baseFov + C.speedFov * Math.pow(p.speed / CONFIG.physics.maxSpeed, 1.5);
   }
@@ -725,6 +743,52 @@ function updateCamera(dt) {
     camera.updateProjectionMatrix();
   }
 
+}
+
+// Oriented-rectangle vs oriented-rectangle overlap (2D, X/Z plane) — the
+// player-vs-AI bump check. A single collision radius can't fit a car well
+// in every direction at once (a car is much longer than it's wide), so this
+// treats each car as a rectangle around its own heading and uses the
+// standard 2-body SAT: for each axis a body's own forward/side directions
+// define, project both rectangles onto it (a box's projected half-extent
+// onto axis n is hl·|forward·n| + hw·|side·n|) and compare to the distance
+// between centers along that same axis. Any axis with zero or negative
+// overlap proves the boxes are separated; if all four have positive
+// overlap, they intersect, and the axis with the SMALLEST positive overlap
+// is the cheapest direction to push them apart along (the standard SAT
+// minimum-translation-vector pick). Both cars share the same hl/hw (see
+// CONFIG.physics.carHalfLength/carHalfWidth) — collision footprint is
+// uniform across car models, same as the old radius was.
+// Returns { overlap, nx, nz } (push direction, B -> A) or null if apart.
+function obbOverlap(ax, az, aHeading, bx, bz, bHeading, hl, hw) {
+  const afx = Math.sin(aHeading), afz = Math.cos(aHeading), asx = afz, asz = -afx;
+  const bfx = Math.sin(bHeading), bfz = Math.cos(bHeading), bsx = bfz, bsz = -bfx;
+  const dx = ax - bx, dz = az - bz;
+  const axes = [[afx, afz], [asx, asz], [bfx, bfz], [bsx, bsz]];
+  let minOverlap = Infinity, minAxis = null;
+  for (const [nx, nz] of axes) {
+    const rA = hl * Math.abs(afx * nx + afz * nz) + hw * Math.abs(asx * nx + asz * nz);
+    const rB = hl * Math.abs(bfx * nx + bfz * nz) + hw * Math.abs(bsx * nx + bsz * nz);
+    const overlap = rA + rB - Math.abs(dx * nx + dz * nz);
+    if (overlap <= 0) return null; // separating axis found — boxes don't overlap
+    if (overlap < minOverlap) { minOverlap = overlap; minAxis = [nx, nz]; }
+  }
+  let [nx, nz] = minAxis;
+  if (dx * nx + dz * nz < 0) { nx = -nx; nz = -nz; } // point the MTV from B toward A
+  return { overlap: minOverlap, nx, nz };
+}
+
+// Collision wireframe (G): the boxes track the same pos/heading the physics
+// just integrated, so a box edge resting on the wall fence means contact.
+// Called from the countdown path too — otherwise the boxes sit unwritten at
+// the world origin until the lights go out.
+function updateCollisionDebug(r) {
+  if (!collisionDebugOn || !collisionDebug) return;
+  collisionDebug.setFocus(r.lastIdx);
+  collisionDebug.update([
+    { x: r.player.pos.x, z: r.player.pos.z, y: groundState.y, heading: r.player.heading, player: true },
+    ...r.ai.map((a) => ({ x: a.car.pos.x, z: a.car.pos.z, y: a.groundY, heading: a.car.heading, player: false })),
+  ]);
 }
 
 function step(now, dt) {
@@ -786,6 +850,7 @@ function step(now, dt) {
       hud.center("GO!", "go", 900);
       audio.beep(880, 0.4, 0.35);
     }
+    updateCollisionDebug(r);
     updateCamera(dt);
     drawHud(input, { onRoad: true });
     return;
@@ -795,7 +860,11 @@ function step(now, dt) {
   const inp = r.state === "finished" ? { throttle: 0, brake: 1, steer: 0, handbrake: 0 } : input;
 
   // ---------- surface + physics (substepped) ----------
-  let q = r.track.query(r.player.pos, r.lastIdx);
+  // queryProjected (not the raw nearest-sample query): continuous closest-
+  // point projection, so the wall/onRoad boundary tracks the same smooth
+  // curve the barrier ribbon mesh is drawn from instead of faceting per
+  // sample on tight curvature (see physics.js's collideWithBarriers).
+  let q = r.track.queryProjected(r.player.pos, r.lastIdx);
   r.lastIdx = q.idx;
   const onRoad = Math.abs(q.lateral) <= r.track.halfW + CONFIG.track.kerbWidth;
   const off = CONFIG.physics.offroad;
@@ -814,16 +883,25 @@ function step(now, dt) {
   const steps = Math.max(1, Math.ceil(dt / (1 / 240)));
   const h = dt / steps;
   let impact = 0;
+  let impNx = 0, impNz = 0; // outward normal of the barrier segment that was hit
   for (let i = 0; i < steps; i++) {
     r.player.update(h, inp, surface);
-    q = r.track.query(r.player.pos, r.lastIdx);
+    q = r.track.queryProjected(r.player.pos, r.lastIdx);
     r.lastIdx = q.idx;
-    impact = Math.max(impact, collideWithWall(r.player, q, r.track.wallDistAt(q.idx, Math.sign(q.lateral) || 1)));
+    const hit = collideWithBarriers(r.player, r.track.barriers, segScratch);
+    if (hit > impact) {
+      impact = hit;
+      // The struck segment's own normal, not a centerline-derived one.
+      const p = barrierPenetration(r.player, r.track.barriers, segScratch);
+      impNx = p.nx; impNz = p.nz;
+    }
   }
   if (impact > 2.5) {
     audio.thud(impact / 8);
-    const sgn = Math.sign(q.lateral) || 1;
-    r.effects.impact(r.player.pos.x, groundState.y, r.player.pos.z, q.s.side.x * sgn, q.s.side.z * sgn, impact);
+    // Emit at the contact patch on the bodywork, not the car's center.
+    const cp = contactPoint(r.player.pos, r.player.heading, impNx, impNz);
+    r.effects.impact(cp.x, groundState.y, cp.z, impNx, impNz, impact);
+    damageCarAt(playerRig.damageMeshes, r.player.pos, groundState.y + playerRig.lift, r.player.heading, { x: impNx, z: impNz }, impact);
   }
 
   // ---------- checkpoints & laps ----------
@@ -848,33 +926,83 @@ function step(now, dt) {
   }
 
   // ---------- player progress score for ranking ----------
+  // Continuous arc for the same reason currentPosition() uses it: this feeds
+  // the rubber-band delta against each AI's arc-based progress.
   const region = Math.floor(q.idx / (N / ncp)) % ncp;
-  const within = region === r.cp ? q.idx / N : r.cp / ncp;
+  const within = region === r.cp ? q.arc / r.track.length : r.cp / ncp;
   const playerScore = r.lapsDone + within;
 
   // ---------- AI ----------
   r.bumpCd = Math.max(0, r.bumpCd - dt);
+  r.aiWallAudioCd = Math.max(0, r.aiWallAudioCd - dt);
   const RB = CONFIG.ai.rubberBand;
+  const BUMP = CONFIG.ai.bump;
+  const HL = CONFIG.physics.carHalfLength * CONFIG.carScale, HW = CONFIG.physics.carHalfWidth * CONFIG.carScale;
   for (const a of r.ai) {
     if (a.lap >= r.def.laps) a.finished = true;
     const rubber = clamp(1 + (playerScore - a.progress) * r.track.length * RB.gain, RB.min, RB.max);
     a.update(dt, rubber);
 
-    // simple car-vs-car push (player only)
-    const dx = r.player.pos.x - a.pos.x, dz = r.player.pos.z - a.pos.z;
-    const dist = Math.hypot(dx, dz);
-    const minD = CONFIG.physics.carRadius * CONFIG.carScale + CONFIG.ai.radius;
-    if (dist < minD && dist > 1e-4) {
-      const nx = dx / dist, nz = dz / dist;
-      const push = minD - dist;
-      r.player.pos.x += nx * push;
-      r.player.pos.z += nz * push;
-      r.player.vel.x += nx * 2.2;
-      r.player.vel.z += nz * 2.2;
-      a.v *= 0.97;
+    // AI-vs-wall: cars really hit barriers (real CarPhysics), so give them the
+    // same damage/effects treatment as the player's own wall hits — but faded
+    // by distance from the camera. Shake and sound are the player's own senses;
+    // an AI crashing across the track shouldn't rattle the view or land in the
+    // mix as if it happened here. Sparks and dents are at the crash site and
+    // stay full strength. Audio is also throttled by ONE cooldown shared across
+    // all AI, so a pile-up doesn't machine-gun the mix.
+    if (a.lastImpact > 2.5 && a.wallCd <= 0) {
+      a.wallCd = 0.4;
+      const an = a.lastImpactNormal;
+      const acp = contactPoint(a.car.pos, a.car.heading, an.x, an.z);
+      const dist = Math.hypot(acp.x - camera.position.x, acp.z - camera.position.z);
+      // Shake reaches ~18 m and is muted even point-blank; sound carries further.
+      const shake = clamp(1 - dist / 18, 0, 1) * 0.35;
+      r.effects.impact(acp.x, a.groundY, acp.z, an.x, an.z, a.lastImpact, a.color, shake);
+      // groundY + lift (not bare groundY) is where this car's rig origin
+      // actually sits — damageCarAt offsets up from the value it's given, so
+      // passing road level would land every AI dent at the sills instead of
+      // mid-body where the player's land. Sparks above stay at road level.
+      damageCarAt(a.damageMeshes, a.pos, a.groundY + a.lift, a.car.heading, a.lastImpactNormal, a.lastImpact);
+      if (r.aiWallAudioCd <= 0) {
+        const gain = Math.min(0.4, a.lastImpact / 12) * clamp(1 - dist / 45, 0, 1);
+        if (gain > 0.02) {
+          audio.thud(gain);
+          r.aiWallAudioCd = 0.35;
+        }
+      }
+    }
+
+    // player-vs-AI bump: two-body correction, split unevenly so the AI
+    // consistently gives up more ground/speed per hit than the player does
+    // ("equal but a little in the player's favour") — see CONFIG.ai.bump.
+    // obbOverlap (oriented rectangle, not a single radius) so the cars'
+    // actual footprints can't move inside each other regardless of
+    // approach angle — nose-to-tail, side-by-side, or anything between.
+    const hit = obbOverlap(r.player.pos.x, r.player.pos.z, r.player.heading, a.car.pos.x, a.car.pos.z, a.car.heading, HL, HW);
+    if (hit) {
+      const { overlap, nx, nz } = hit; // AI -> player
+      // Position-only separation — no velocity impulse. An impulse (adding
+      // outward velocity every frame the cars overlap) is what reads as a
+      // bounce/repulsion; just resolving the overlap each frame lets cars
+      // nudge/rub against each other and slide apart under their own
+      // steering instead of springing off one another.
+      r.player.pos.x += nx * overlap * BUMP.pushPlayerShare;
+      r.player.pos.z += nz * overlap * BUMP.pushPlayerShare;
+      a.car.pos.x -= nx * overlap * BUMP.pushAiShare;
+      a.car.pos.z -= nz * overlap * BUMP.pushAiShare;
       if (r.bumpCd <= 0) {
         audio.thud(0.5);
-        r.effects.impact(a.pos.x, 0, a.pos.z, -nx, -nz, 3);
+        // Emit on the AI's flank where the two cars actually meet, along its
+        // OWN outward normal (+n, AI -> player). This used to pass -n at the
+        // AI's center: the player's normal applied at the AI's position, so
+        // the burst came out of the middle of the AI facing the wrong way.
+        const bcp = contactPoint(a.car.pos, a.car.heading, nx, nz);
+        r.effects.impact(bcp.x, a.groundY, bcp.z, nx, nz, 3, a.color);
+        // nx,nz points AI -> player; each car's damage wants the direction
+        // FROM its own center TOWARD whatever it hit, so player uses the
+        // opposite sign from AI.
+        damageCarAt(playerRig.damageMeshes, r.player.pos, groundState.y + playerRig.lift, r.player.heading, { x: -nx, z: -nz }, 3);
+        damageCarAt(a.damageMeshes, a.pos, a.groundY + a.lift, a.car.heading, { x: nx, z: nz }, 3);
         r.bumpCd = 0.5;
       }
     }
@@ -900,6 +1028,8 @@ function step(now, dt) {
 
   // ---------- visuals / effects / audio ----------
   posePlayerRig(dt);
+
+  updateCollisionDebug(r);
 
   // Drift/handbrake/brake-lockup marking is always a rear-axle phenomenon in
   // this model (handbrakes act on the rear regardless of drivetrain). Wheelspin
@@ -1012,6 +1142,10 @@ function perfSample(now, raw) {
     for (const m of race.staticBatches) if (m.visible) cv++;
     for (const b of race.billboards) if (b.visible) bv++;
     cull = `\ndd ${CONFIG.render.drawDistance}m  chunks ${cv}/${race.staticBatches.length}  sprites ${bv}/${race.billboards.length}`;
+    // Barrier clearance, from the same routine collision uses: 0.00 = touching,
+    // positive = daylight (so a shove then came from an AI bump, not a wall).
+    const p = barrierPenetration(race.player, race.track.barriers, segScratch);
+    cull += `\nclr ${(p.pen === -Infinity ? 99 : -p.pen).toFixed(3)}m`;
   }
   const cv2 = renderer.domElement;
   cull += `\nres ${cv2.width}x${cv2.height}`;

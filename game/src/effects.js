@@ -209,12 +209,168 @@ class Particles {
 }
 
 // ---------------------------------------------------------------------
+// Paint chips: pooled tumbling triangles. A separate system from Particles
+// because point sprites can't rotate — gl_PointSize gives a screen-aligned
+// square, and the whole read here is flat shards catching the light as they
+// spin. Each chip is 3 unindexed verts written in world space every frame
+// from its own position + orientation quaternion.
+// ---------------------------------------------------------------------
+const _q = new THREE.Quaternion();
+const _dq = new THREE.Quaternion();
+const _axis = new THREE.Vector3();
+const _v = new THREE.Vector3();
+
+class Chips {
+  // Pool sized for a few overlapping impacts at the per-hit count impact()
+  // spawns (up to 26), so a second hit doesn't recycle the first one's shards
+  // while they're still visibly settling.
+  constructor(scene, cap = 160) {
+    this.cap = cap;
+    this.cursor = 0;
+    this.pos = new Float32Array(cap * 3);
+    this.vel = new Float32Array(cap * 3);
+    this.spin = new Float32Array(cap * 3); // angular velocity: axis * rad/s
+    this.quat = new Float32Array(cap * 4);
+    this.age = new Float32Array(cap);
+    this.life = new Float32Array(cap); // 0 = dead
+    this.size = new Float32Array(cap);
+    this.floor = new Float32Array(cap); // y to bounce off (road under the hit)
+
+    const geo = new THREE.BufferGeometry();
+    this.posAttr = new THREE.BufferAttribute(new Float32Array(cap * 9), 3).setUsage(THREE.DynamicDrawUsage);
+    this.colAttr = new THREE.BufferAttribute(new Float32Array(cap * 9), 3).setUsage(THREE.DynamicDrawUsage);
+    this.alphaAttr = new THREE.BufferAttribute(new Float32Array(cap * 3), 1).setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute("position", this.posAttr);
+    geo.setAttribute("aColor", this.colAttr);
+    geo.setAttribute("aAlpha", this.alphaAttr);
+
+    this.material = new THREE.ShaderMaterial({
+      vertexShader: `
+        attribute vec3 aColor;
+        attribute float aAlpha;
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          vColor = aColor;
+          vAlpha = aAlpha;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          if (vAlpha < 0.004) discard;
+          gl_FragColor = vec4(vColor, vAlpha);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide, // they tumble, so both faces show
+    });
+
+    this.mesh = new THREE.Mesh(geo, this.material);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 3;
+    scene.add(this.mesh);
+    this.scene = scene;
+  }
+
+  spawn(x, y, z, opt) {
+    const i = this.cursor;
+    this.cursor = (this.cursor + 1) % this.cap;
+    const k = i * 3;
+    this.pos[k] = x; this.pos[k + 1] = y; this.pos[k + 2] = z;
+    const sp = opt.spread ?? 2;
+    this.vel[k] = (opt.vx ?? 0) + (Math.random() - 0.5) * sp;
+    this.vel[k + 1] = (opt.vy ?? 2) + Math.random() * sp * 0.5;
+    this.vel[k + 2] = (opt.vz ?? 0) + (Math.random() - 0.5) * sp;
+    const rate = 12 + Math.random() * 26; // rad/s — fast enough to flicker
+    _axis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize().multiplyScalar(rate);
+    this.spin[k] = _axis.x; this.spin[k + 1] = _axis.y; this.spin[k + 2] = _axis.z;
+    const o = i * 4;
+    this.quat[o] = 0; this.quat[o + 1] = 0; this.quat[o + 2] = 0; this.quat[o + 3] = 1;
+    this.age[i] = 0;
+    this.life[i] = opt.life ?? 1.2;
+    this.size[i] = opt.size ?? 0.05;
+    this.floor[i] = opt.floor ?? y - 0.2;
+    const c = opt.color ?? [0.8, 0.8, 0.82];
+    // Per-chip shade jitter so a burst doesn't read as one flat colour.
+    const j = 0.75 + Math.random() * 0.45;
+    for (let v = 0; v < 3; v++) {
+      const a = (i * 3 + v) * 3;
+      this.colAttr.array[a] = Math.min(1, c[0] * j);
+      this.colAttr.array[a + 1] = Math.min(1, c[1] * j);
+      this.colAttr.array[a + 2] = Math.min(1, c[2] * j);
+    }
+  }
+
+  update(dt) {
+    const P = this.posAttr.array, A = this.alphaAttr.array;
+    for (let i = 0; i < this.cap; i++) {
+      if (this.life[i] <= 0) continue;
+      this.age[i] += dt;
+      const k = i * 3, o = i * 4;
+      if (this.age[i] >= this.life[i]) {
+        this.life[i] = 0;
+        A[i * 3] = A[i * 3 + 1] = A[i * 3 + 2] = 0;
+        continue;
+      }
+      this.vel[k + 1] -= 9.8 * dt;
+      this.pos[k] += this.vel[k] * dt;
+      this.pos[k + 1] += this.vel[k + 1] * dt;
+      this.pos[k + 2] += this.vel[k + 2] * dt;
+      // Skitter along the road instead of sinking through it — one cheap
+      // inelastic bounce test against the surface height at the hit.
+      if (this.pos[k + 1] < this.floor[i]) {
+        this.pos[k + 1] = this.floor[i];
+        this.vel[k + 1] *= -0.34;
+        this.vel[k] *= 0.72;
+        this.vel[k + 2] *= 0.72;
+        this.spin[k] *= 0.6; this.spin[k + 1] *= 0.6; this.spin[k + 2] *= 0.6;
+      }
+      // integrate orientation: q = delta * q
+      _axis.set(this.spin[k], this.spin[k + 1], this.spin[k + 2]);
+      const rate = _axis.length();
+      _q.set(this.quat[o], this.quat[o + 1], this.quat[o + 2], this.quat[o + 3]);
+      if (rate > 1e-5) {
+        _dq.setFromAxisAngle(_axis.divideScalar(rate), rate * dt);
+        _q.premultiply(_dq).normalize();
+        this.quat[o] = _q.x; this.quat[o + 1] = _q.y; this.quat[o + 2] = _q.z; this.quat[o + 3] = _q.w;
+      }
+      // Write the 3 world-space verts. Deliberately scalene/offset so the
+      // shard looks torn rather than like a tidy isoceles arrowhead.
+      const s = this.size[i];
+      const u = this.age[i] / this.life[i];
+      const alpha = u > 0.6 ? 1 - (u - 0.6) / 0.4 : 1;
+      const TRI = [[0, 0, s], [-s * 0.85, 0, -s * 0.62], [s * 0.7, 0, -s * 0.48]];
+      for (let v = 0; v < 3; v++) {
+        _v.set(TRI[v][0], TRI[v][1], TRI[v][2]).applyQuaternion(_q);
+        const a = (i * 3 + v) * 3;
+        P[a] = this.pos[k] + _v.x;
+        P[a + 1] = this.pos[k + 1] + _v.y;
+        P[a + 2] = this.pos[k + 2] + _v.z;
+        A[i * 3 + v] = alpha;
+      }
+    }
+    this.posAttr.needsUpdate = true;
+    this.colAttr.needsUpdate = true;
+    this.alphaAttr.needsUpdate = true;
+  }
+
+  dispose() {
+    this.scene.remove(this.mesh);
+    this.mesh.geometry.dispose();
+    this.material.dispose();
+  }
+}
+
+// ---------------------------------------------------------------------
 // High-level manager wired into the game loop.
 // ---------------------------------------------------------------------
 export class Effects {
   constructor(scene) {
     this.skids = new SkidMarks(scene);
     this.particles = new Particles(scene);
+    this.chips = new Chips(scene);
     this.shake = 0;
     this.time = 0;
     this.markPrev = [null, null]; // rear-slide track: { c, l, r } last laid points
@@ -289,6 +445,7 @@ export class Effects {
     this.time += dt;
     this.skids.update(this.time);
     this.particles.update(dt);
+    this.chips.update(dt);
     this.shake = Math.max(0, this.shake - dt * 2.2);
     this._groundYAt = state.groundYAt;
 
@@ -333,20 +490,67 @@ export class Effects {
     }
   }
 
-  // Wall or car hit: sparks + camera shake.
-  impact(x, y, z, nx, nz, strength) {
-    this.shake = Math.min(0.5, this.shake + strength * 0.06);
-    const n = Math.min(18, 5 + strength * 2) | 0;
+  // Wall or car hit: sparks, paint chips, camera shake.
+  // `paint` is an optional 0xRRGGBB for the chip colour — main.js passes the
+  // struck AI's own colour; the player has no single paint value to read (its
+  // body is a textured GLTF), so it falls back to a light silver.
+  // `shakeScale` keeps camera shake tied to what the PLAYER is involved in: an
+  // AI hitting a barrier is someone else's crash and shouldn't rattle the view
+  // from across the track, so main.js passes a distance falloff for those.
+  impact(x, y, z, nx, nz, strength, paint, shakeScale = 1) {
+    this.shake = Math.min(0.5, this.shake + strength * 0.06 * shakeScale);
+
+    // Sparks: small and numerous. Thrown gently — a fast, wide fan reads as a
+    // firework rather than metal grinding, so the burst stays close to the
+    // contact point and lets the chips carry the motion instead. They still
+    // grow barely at all (grow) — a spark that swells looks like smoke.
+    const n = Math.min(34, 9 + strength * 3.4) | 0;
     for (let i = 0; i < n; i++) {
+      const fast = Math.random() < 0.3; // a few longer throws for variety
       this.particles.spawn(x, y + 0.15, z, {
-        vx: -nx * (1 + Math.random() * 2.5),
-        vz: -nz * (1 + Math.random() * 2.5),
-        vy: 0.8 + Math.random() * 2,
-        spread: 2.2,
-        life: 0.25 + Math.random() * 0.3,
-        size: 0.09, grow: 0.1,
-        alpha: 0.9, grav: -9,
-        color: [1, 0.72 + Math.random() * 0.2, 0.25],
+        vx: -nx * (0.7 + Math.random() * (fast ? 2.6 : 1.4)),
+        vz: -nz * (0.7 + Math.random() * (fast ? 2.6 : 1.4)),
+        vy: 0.6 + Math.random() * 1.3,
+        spread: 1.5,
+        life: 0.3 + Math.random() * 0.45,
+        size: 0.1 + Math.random() * 0.055, grow: 0.12,
+        alpha: 1, grav: -9,
+        color: [1, 0.72 + Math.random() * 0.22, 0.22],
+      });
+    }
+    // A couple of near-white hot cores at the contact point for the flash.
+    for (let i = 0; i < 3; i++) {
+      this.particles.spawn(x, y + 0.15, z, {
+        vx: -nx * (0.3 + Math.random() * 0.5), vz: -nz * (0.3 + Math.random() * 0.5),
+        vy: 0.4 + Math.random() * 0.5, spread: 0.7,
+        life: 0.1 + Math.random() * 0.12,
+        size: 0.18, grow: 0.5,
+        alpha: 1, grav: -3,
+        color: [1, 0.97, 0.85],
+      });
+    }
+
+    // Paint chips: tumbling shards, thrown back along the normal and up, but
+    // gently — they should scatter and skitter, not fountain. Scales harder
+    // with strength than the sparks do, so a light graze sparks without
+    // visibly shedding bodywork.
+    const nc = Math.min(26, Math.max(0, (strength - 2) * 3.4)) | 0;
+    const c = paint == null
+      ? [0.78, 0.78, 0.82]
+      : [((paint >> 16) & 255) / 255, ((paint >> 8) & 255) / 255, (paint & 255) / 255];
+    for (let i = 0; i < nc; i++) {
+      // Squared random biases the spread toward tiny flecks with the occasional
+      // bigger flake, rather than a uniform batch that reads as one size.
+      const r = Math.random();
+      this.chips.spawn(x, y + 0.2, z, {
+        vx: -nx * (0.6 + Math.random() * 1.7),
+        vz: -nz * (0.6 + Math.random() * 1.7),
+        vy: 0.9 + Math.random() * 1.4,
+        spread: 1.4,
+        life: 1.1 + Math.random() * 0.9,
+        size: 0.012 + r * r * 0.075,
+        floor: y + 0.02,
+        color: c,
       });
     }
   }
@@ -354,5 +558,6 @@ export class Effects {
   dispose() {
     this.skids.dispose();
     this.particles.dispose();
+    this.chips.dispose();
   }
 }
