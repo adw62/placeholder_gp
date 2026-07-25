@@ -27,6 +27,7 @@ import { buildSpline } from "./spline.js";
 import {
   buildTree, buildBillboard, buildBarrier, buildApexKerb, buildTireBarrier, buildBuilding, buildCutoutSprite, buildCrowdFigure,
   kerbTexture, getRoadTexture, getRibbonAtlas, ASSETS,
+  BARRIER_HALF_THICKNESS, BARRIER_HALF_LENGTH, TIRE_RADIUS,
 } from "./placeholders.js";
 
 export const OBJECT_TYPES = {
@@ -131,22 +132,76 @@ export function resolveBands(def, spline) {
 // that side wins (it's what gets hit first). Stretches with no collidable
 // band at all keep the flat fallback distance. Only meaningful for the main
 // track (extra splines have no wallDist/physics concept).
-const COLLIDABLE_BARRIER_TYPES = new Set(["barrier", "splineBarrier", "tireBarrier"]);
+// A band's `offset`/`from`/`to` position each instance's ORIGIN, but what the
+// driver sees — and expects to stop against — is its SURFACE, so both need
+// the prop's own dimensions added back:
+//   thick = origin -> road-facing surface, laterally. Ignoring it put the
+//           wall a whole tire radius behind the visible tire stack.
+//   reach = half-extent ALONG the track, i.e. how much further than the
+//           band's from/to the props actually run.
+// A tire stack is a 0.48 m circle in plan, so both are its radius; a guardrail
+// is a thin 2.2 m beam; a ribbon is a zero-thickness strip drawn exactly over
+// its own from/to range, so it needs neither.
+const COLLIDABLE_BARRIER_TYPES = new Map([
+  ["barrier", { thick: BARRIER_HALF_THICKNESS, reach: BARRIER_HALF_LENGTH }],
+  ["splineBarrier", { thick: 0, reach: 0 }],
+  ["tireBarrier", { thick: TIRE_RADIUS, reach: TIRE_RADIUS }],
+]);
 
 export function computeWallProfile(samples, length, bands, fallbackDist) {
   const N = samples.length;
   const left = new Float32Array(N).fill(fallbackDist);
   const right = new Float32Array(N).fill(fallbackDist);
+  const ds = length / N; // samples are evenly arc-spaced (getSpacedPoints)
+
+  // Curvature for the degeneracy test below, averaged over +-2 samples: the raw
+  // per-sample value is a second difference across one ~0.85 m step and
+  // underestimates radius by 15-20% through a tight apex, enough to fire that
+  // test on estimator noise and mangle a perfectly valid barrier. NOT written
+  // back into samples[].curv — vtAI, kerb runs and band spacing are all tuned
+  // against the raw values.
+  const SMOOTH = 2;
+  const curvSmooth = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    let sum = 0;
+    for (let k = -SMOOTH; k <= SMOOTH; k++) sum += samples[(((i + k) % N) + N) % N].curv;
+    curvSmooth[i] = sum / (2 * SMOOTH + 1);
+  }
+
   for (const band of bands) {
-    if (!COLLIDABLE_BARRIER_TYPES.has(band.type)) continue;
-    const offset = band.offset ?? fallbackDist;
-    const i0 = Math.floor((band.from ?? 0) * N);
-    const i1 = Math.ceil((band.to ?? 1) * N);
+    const spec = COLLIDABLE_BARRIER_TYPES.get(band.type);
+    if (!spec) continue;
+    const offset = (band.offset ?? fallbackDist) - spec.thick;
+    // The arc range this band's props actually OCCUPY: its own from/to grown
+    // by each instance's half-extent along the track, because placeBand puts
+    // instance CENTERS at from/to.
+    const s0 = (band.from ?? 0) * length - spec.reach;
+    const s1 = (band.to ?? 1) * length + spec.reach;
+    // Narrow sample i only where its OWN arc falls inside that range. The wall
+    // is piecewise-constant per sample, so a band boundary can't land
+    // mid-sample; testing the sample's arc (its cell midpoint) bounds the error
+    // to half a cell either way, versus a full cell for any rounding. Erring
+    // toward including it would put invisible wall in open air; `reach` above is
+    // what stops this from over-excluding the first/last instance.
     for (const sign of signsFor(band.side ?? "both")) {
       const arr = sign > 0 ? left : right;
-      for (let k = i0; k <= i1; k++) {
+      for (let k = Math.floor(s0 / ds) - 1; k <= Math.ceil(s1 / ds) + 1; k++) {
+        const arcK = k * ds;
+        if (arcK < s0 || arcK > s1) continue;
         const i = ((k % N) + N) % N;
-        if (offset < arr[i]) arr[i] = offset;
+        // A lateral offset only traces a sane parallel curve while it stays
+        // under the local radius of curvature on the concave (inside) face —
+        // push it past that and the offset curve folds back through the
+        // center of curvature, so this band's `offset` stops meaning a
+        // distance at all right there.
+        //
+        // CLAMP to the innermost still-sane parallel curve rather than skipping
+        // the band: skipping fell back to the uniform margin, which is LOOSER
+        // than the barrier, so collision switched off where it was needed most.
+        // A degeneracy must never widen the wall.
+        const concaveCurv = -sign * curvSmooth[i];
+        const eff = concaveCurv > 0 ? Math.min(offset, 0.95 / concaveCurv) : offset;
+        if (eff < arr[i]) arr[i] = eff;
       }
     }
   }
@@ -267,7 +322,18 @@ function placePoint(group, spline, pt, rng, billboards, splineId, index) {
 // stripGeometry/wallGeometry, generalized to an arbitrary [fromS, toS] band
 // instead of the whole lap.
 // ---------------------------------------------------------------------
-const RIBBON_STEP = 1.5; // meters between geometry samples along a ribbon
+// Meters between geometry samples along a ribbon. A ribbon is a chord chain,
+// so on a corner's INSIDE face its chords bow away from the true offset curve
+// while collision sits on the curve itself — which reads as the barrier
+// standing slightly off the car at an apex. The bow is a sagitta, so it falls
+// with the SQUARE of this: measured against the wall over Circuito di Roma's
+// ribbon-backed samples, 1.5 m left 119 samples gapped by 1-2 cm (mean 3.4
+// mm); 0.75 m leaves 2 (mean 1.5 mm) for ~4k more triangles and no extra draw
+// calls (a ribbon is one mesh at any density). 0.5 m only reaches 1.1 mm for
+// another 4k, so this is the knee. The 2 that remain are the start/finish seam,
+// where the 3.95 and 4.30 ribbons overlap and the nearer one is correctly the
+// wall — not faceting, and not fixable by sampling harder.
+const RIBBON_STEP = 0.75;
 
 // Vertical strip (barrier-like): one lateral offset, ground to `height`.
 // UV.u is remapped per `tileLength`-meter segment into a random cell of the

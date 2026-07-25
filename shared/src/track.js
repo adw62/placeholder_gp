@@ -13,6 +13,7 @@ import { CONFIG } from "./config.js";
 import { asphaltTexture, checkerTexture, buildStartGantry } from "./placeholders.js";
 import { buildSpline } from "./spline.js";
 import { resolveBands, computeWallProfile, wallDistAt } from "./trackObjects.js";
+import { buildBarriers } from "./barriers.js";
 
 // Flat ribbon between two lateral offsets, following the sample frames.
 function stripGeometry(samples, i0, count, offA, offB, yLift, uvMode, uvScale) {
@@ -47,7 +48,7 @@ export function buildTrack(def) {
   const TC = CONFIG.track;
   const N = TC.samples, ncp = TC.checkpoints;
 
-  const { samples, length, posAt, query } = buildSpline(def.controlPoints, true, N);
+  const { samples, length, posAt, query, queryProjected } = buildSpline(def.controlPoints, true, N);
 
   const halfW = def.width / 2;
   const wallDist = halfW + TC.wallMargin;
@@ -106,7 +107,15 @@ export function buildTrack(def) {
   const wallProfile = computeWallProfile(samples, length, resolveBands(def, { samples, length, wallDist, halfW }), wallDist);
 
   return {
-    def, group, samples, length, halfW, wallDist, checkpoints, ncp, vtAI, query, posAt, minimapPts,
+    def, group, samples, length, halfW, wallDist, checkpoints, ncp, vtAI, query, queryProjected, posAt, minimapPts,
     wallDistAt: (idx, sign) => wallDistAt(wallProfile, idx, sign),
+    // The same wall distances baked into world-space polylines — what
+    // physics.js's collideWithBarriers collides against, and what
+    // game/src/collisionDebug.js draws. Built once per track. See
+    // shared/src/barriers.js for why collision left the (arc, lateral) frame.
+    barriers: buildBarriers(
+      { samples, length, posAt },
+      (idx, sign) => wallDistAt(wallProfile, idx, sign)
+    ),
   };
 }

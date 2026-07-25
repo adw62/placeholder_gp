@@ -74,8 +74,24 @@ export const CONFIG = {
 
     offroad: { grip: 0.24, drag: 1.6, power: 0.55 },
 
-    wallRestitution: 0.35,
-    carRadius: 0.5,         // collision radius vs walls / other cars
+    // No wallRestitution knob: all contact is fully inelastic and position-only
+    // by design. Nothing in the game adds velocity on an impact.
+    //
+    // Omnidirectional radius, BASE value (x carScale). Not used for barriers —
+    // that's the oriented footprint below. Still used by the tuning lab's
+    // circular obstacles and damage.js's dent offset.
+    carRadius: 0.5,
+    // Oriented footprint: a car is ~2.2x longer than wide, so one radius is
+    // wrong in both directions at once. Used as a rectangle around each car's
+    // heading by both the car-vs-car bump (main.js's obbOverlap) and barrier
+    // collision, so the same shape stops the car against a wall as blocks
+    // another car. BASE values, x carScale.
+    // Deliberately ~91% of the tightest rigged car (0.459 half-width, 1.080
+    // half-length — the wheels are the widest point), so contact reads as
+    // touching rather than stopping short. That margin is also why a car's own
+    // `scale` isn't applied: the footprint stays uniform across models.
+    carHalfLength: 0.655,   // 0.98 m at carScale 1.5 (vs 1.08 shortest car)
+    carHalfWidth: 0.28,     // 0.42 m at carScale 1.5 (vs 0.459 narrowest car)
   },
 
   drift: { minSlip: 0.1, minSpeed: 1.5, scoreRate: 12 },
@@ -97,8 +113,8 @@ export const CONFIG = {
 
   camera: {
     modes: [
-      { name: "chase", dist: 4.2, height: 1.6 },
-      { name: "far",   dist: 6.5, height: 2.4 },
+      { name: "chase", dist: 3.3, height: 0.6, lookAhead: 5 },
+      { name: "far",   dist: 6.5, height: 2.4, lookAhead: 3 },
       { name: "hood",  dist: 0,   height: 0 },
     ],
     baseFov: 55,
@@ -155,16 +171,39 @@ export const CONFIG = {
   },
 
   ai: {
-    enabled: false,     // opponents temporarily disabled — flip to bring them back
-    lateralAccel: 9.5,  // cornering limit used to compute their racing speed
-    accel: 5,
-    brake: 7.5,
+    enabled: true,      // false = solo time trial (no opponents built at all)
+    lateralAccel: 9.5,  // cornering limit used to compute their racing speed (feeds track.js's vtAI table)
+    brake: 7.5,          // braking-lookahead rate for the same vtAI table
     maxSpeed: 20,
     skills: [0.93, 0.97, 1.01],          // per-opponent speed factor
     colors: [0xe74c3c, 0x3498db, 0xf1c40f],
     offsets: [-1.8, 0, 1.8],             // preferred lateral line
     rubberBand: { gain: 0.0006, min: 0.93, max: 1.07 },
-    radius: 0.55,
+    // AI cars now collide as real bodies (the same oriented footprint the
+    // player uses — CONFIG.physics.carHalfLength/carHalfWidth, see main.js's
+    // bump block) instead of each side having its own collision radius.
+    // Position-only contact (no velocity impulse — that read as cars
+    // bouncing/repelling off each other, and no per-frame speed drain
+    // either — that compounded every frame of sustained contact and could
+    // stall a car in under a second of door-to-door rubbing) split
+    // unevenly so it still reads as "equal but a little in the player's
+    // favour": the AI gives up more ground per overlap than the player
+    // does, but neither one launches off — or grinds to a halt on — the
+    // other; two cars running side by side should be able to rub doors
+    // and slide past without either one stopping.
+    bump: {
+      pushPlayerShare: 0.4, pushAiShare: 0.6,  // overlap-correction split
+    },
+    // Corner assist (game/src/ai.js): rolled once per corner (using
+    // CONFIG.track.kerbMinCurv as the "is this actually a corner" gate) so
+    // that fraction of corners gets a gentle pull back toward the spline
+    // line — cuts down how often the raw physics spins the AI out, while
+    // leaving the rest fully raw so spins still happen sometimes on purpose.
+    cornerAssist: {
+      chance: 0.9,       // fraction of corners that get the assist
+      headingRate: 8,    // 1/s blend of heading toward the spline tangent
+      latDamp: 6,        // 1/s bleed-off of the slide (lateral) component of velocity
+    },
   },
 
   track: {

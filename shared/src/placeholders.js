@@ -49,6 +49,14 @@ export const ASSETS = {
       // WHEEL (below) is tuned to fit White #7's body; Red #11's body has
       // different proportions and needs its own position.
       wheelOffset: { localX: 0.29, rearZ: -0.52 },
+      // Optional per-car multiplier on CONFIG.carScale (default 1) — visual
+      // rig size only (buildPlayerCar/buildOpponentCar), not the shared
+      // physics tuning (mass/grip/wheelbase/collision radius all still come
+      // from CONFIG.carScale alone, same for every car — AI already shares
+      // one physics profile across cars, not a per-car one, so a small
+      // visual-only difference here doesn't create a mismatched hitbox
+      // anyone would actually notice).
+      scale: 0.9,
     },
     { id: "white7", name: "White #7", url: "assets/models/cars/white7.gltf" },
     // Green #5 is NOT listed here — it's auto-discovered from
@@ -643,12 +651,23 @@ export function buildRock(rng) {
 // Convention: forward is local +Z, so the long axis must run along Z or
 // every barrier ends up perpendicular to the road instead of parallel.
 const BARRIER_HEIGHT = 0.55; // matches the old default wall height
+// Distance from this prop's ORIGIN to its road-facing surface. A band's
+// `offset` positions the origin, so trackObjects.js's computeWallProfile has
+// to subtract this to put the physics wall on the face the driver can see
+// rather than half a prop behind it. Swapping in a real GLTF via
+// ASSETS.models.barrier means measuring its own half-thickness here.
+export const BARRIER_HALF_THICKNESS = 0.05;
+// Half-extent ALONG the track (local Z, the long axis) — computeWallProfile
+// needs it because a band's from/to positions instance CENTERS, so the props
+// reach this much further along the track than the band's own range.
+export const BARRIER_HALF_LENGTH = 1.1;
 let _barrierPostGeo = null, _barrierBeamGeo = null, _barrierPostMat = null, _barrierBeamMat = null;
 
 function barrierAssets() {
   if (_barrierBeamMat) return;
-  _barrierPostGeo = new THREE.CylinderGeometry(0.05, 0.05, BARRIER_HEIGHT, 6);
-  _barrierBeamGeo = new THREE.BoxGeometry(0.1, BARRIER_HEIGHT * 0.55, 2.2); // long axis Z
+  const t = BARRIER_HALF_THICKNESS;
+  _barrierPostGeo = new THREE.CylinderGeometry(t, t, BARRIER_HEIGHT, 6);
+  _barrierBeamGeo = new THREE.BoxGeometry(t * 2, BARRIER_HEIGHT * 0.55, BARRIER_HALF_LENGTH * 2); // long axis Z
   _barrierPostMat = std(0x3a3f47, { metalness: 0.3, roughness: 0.6 });
   _barrierBeamMat = new THREE.MeshStandardMaterial({ map: wallTexture(), roughness: 0.7 });
   for (const shared of [_barrierPostGeo, _barrierBeamGeo, _barrierPostMat, _barrierBeamMat]) shared.userData.shared = true;
@@ -702,7 +721,10 @@ export function buildApexKerb(rng) {
 // stacked on the last), so unlike buildBarrier/buildApexKerb it doesn't need
 // a "long axis along Z" convention — orient()'s heading rotation is a no-op
 // on it either way.
-const TIRE_RADIUS = 0.24, TIRE_HEIGHT = 0.17, TIRE_COUNT = 4;
+// TIRE_RADIUS doubles as this prop's origin-to-road-facing-surface distance
+// (a stack is centered on the band offset) — see BARRIER_HALF_THICKNESS.
+export const TIRE_RADIUS = 0.24;
+const TIRE_HEIGHT = 0.17, TIRE_COUNT = 4;
 let _tireGeo = null, _tireMatRed = null, _tireMatWhite = null;
 
 function tireBarrierAssets() {
@@ -1060,7 +1082,10 @@ function makeWheel() {
 // Player rig: GLTF body + procedural wheels with steering pivots.
 // carId selects which ASSETS.carModels entry to use (defaults to the
 // first); must already be preloaded (see preloadAssets/carKey).
-// Returns { group, tilt, steerPivots, spinPivots, rearAnchors, frontAnchors, lift }.
+// Returns { group, tilt, body, steerPivots, spinPivots, rearAnchors, frontAnchors, lift }.
+// `body` is the cloned GLTF root (undivided from tilt) — game/src/damage.js
+// hangs crash-damage vertex deformation off it; editor/tuningLab consumers
+// can ignore it.
 export async function buildPlayerCar(carId = ASSETS.carModels[0]?.id) {
   const group = new THREE.Group();
   const tilt = new THREE.Group(); // body roll/pitch applied here, wheels stay planted
@@ -1103,10 +1128,13 @@ export async function buildPlayerCar(carId = ASSETS.carModels[0]?.id) {
   // Scaling the whole rig keeps body+wheels proportional automatically.
   // `lift` is applied externally (main.js) outside this scaled group, so
   // scale it up here too rather than relying on it to inherit the scale.
-  group.scale.setScalar(CONFIG.carScale);
+  // carDef?.scale is an optional per-car multiplier (visual only — see
+  // ASSETS.carModels' comment on it).
+  const rigScale = CONFIG.carScale * (carDef?.scale ?? 1);
+  group.scale.setScalar(rigScale);
 
   return {
-    group, tilt, lift: lift * CONFIG.carScale,
+    group, tilt, body, lift: lift * rigScale,
     steerPivots: [steerFL, steerFR],
     spinPivots: [wheelFL, wheelFR, wheelRL, wheelRR].map((w) => w.userData.spinPivot),
     frontAnchors: [steerFL, steerFR],
@@ -1116,34 +1144,74 @@ export async function buildPlayerCar(carId = ASSETS.carModels[0]?.id) {
 
 // Opponent: registered GLTF if provided (carId defaults to a random pick
 // among ASSETS.carModels — see randomCarId), otherwise a boxy placeholder.
-// Returns { group, spinPivots }.
+// Returns { group, body, spinPivots, lift }. `body` is the damageable subset
+// of group (chassis/cabin/nose, or the whole GLTF) — wheels are siblings,
+// not children, of it, so game/src/damage.js's crumple never reaches them.
+// `lift` is how far AIRacer needs to raise `group` so the wheels rest on
+// the road surface (group.position.y = groundY + lift) — for a GLTF body,
+// the same Box3-derived measurement buildPlayerCar uses, because that
+// convention's local origin sits mid-body rather than at wheel-contact
+// height; the boxy fallback is already authored ground-origin and needs none.
+// group IS scaled by CONFIG.carScale here (unlike an earlier version of
+// this function) — AI opponents should render the same physical size as
+// the player, which the shared CarPhysics they now drive already assumes.
 export function buildOpponentCar(color, carId = randomCarId()) {
-  const real = carId ? cachedClone(carKey(carId)) : null;
-  if (real) {
-    const group = new THREE.Group();
-    group.add(real);
-    return { group, spinPivots: [] };
-  }
   const group = new THREE.Group();
-  const bodyMat = std(color, { roughness: 0.5, metalness: 0.25 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.26, 1.28), bodyMat);
-  body.position.y = 0.26;
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.2, 0.55), std(0x1c2026, { roughness: 0.3, metalness: 0.5 }));
-  cabin.position.set(0, 0.48, -0.08);
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.14, 0.28), bodyMat);
-  nose.position.set(0, 0.2, 0.74);
-  body.castShadow = cabin.castShadow = nose.castShadow = true;
-  group.add(body, cabin, nose);
+  const real = carId ? cachedClone(carKey(carId)) : null;
+  let body;
+  if (real) {
+    group.add(real);
+    body = real;
+  } else {
+    body = new THREE.Group();
+    const bodyMat = std(color, { roughness: 0.5, metalness: 0.25 });
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.26, 1.28), bodyMat);
+    chassis.position.y = 0.26;
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.2, 0.55), std(0x1c2026, { roughness: 0.3, metalness: 0.5 }));
+    cabin.position.set(0, 0.48, -0.08);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.14, 0.28), bodyMat);
+    nose.position.set(0, 0.2, 0.74);
+    chassis.castShadow = cabin.castShadow = nose.castShadow = true;
+    body.add(chassis, cabin, nose);
+    group.add(body);
+  }
+
+  // Every opponent gets procedural wheels now — previously only this
+  // function's boxy fallback did; a real-GLTF opponent (the common case)
+  // rendered wheel-less. Same WHEEL + per-car wheelOffset fit buildPlayerCar
+  // uses, just without a steering pivot (AI doesn't need visual toe).
+  const carDef = ASSETS.carModels.find((c) => c.id === carId);
+  const w = { ...WHEEL, ...carDef?.wheelOffset };
+
+  // The two body branches above use OPPOSITE vertical conventions, so wheel
+  // height and lift must BOTH follow whichever one produced `body`:
+  //   GLTF (`real`)  — origin mid-body, floor below wheel-center height, so
+  //                    wheels hang at w.localY and the rig has to be lifted
+  //                    until the tires reach the road.
+  //   boxy fallback  — origin AT ground level, whole body above it, so
+  //                    wheels at +radius already sit on the road: lift 0.
+  // Mixing them (GLTF wheel height with the fallback's lift) buried the
+  // fallback's wheels ~0.3 m under the road, so the two decisions are made
+  // off the same test. The GLTF arm is kept expression-identical to
+  // buildPlayerCar's so one model rigged both ways sits at the same height.
+  const bodyMinY = new THREE.Box3().setFromObject(body).min.y;
+  const wheelY = real ? w.localY : w.radius;
+  const liftRaw = real ? w.radius - (bodyMinY < w.localY ? w.localY : bodyMinY + 0.02) : 0;
 
   const spinPivots = [];
   for (const [x, z] of [
-    [-WHEEL.localX, WHEEL.frontZ], [WHEEL.localX, WHEEL.frontZ],
-    [-WHEEL.localX, WHEEL.rearZ], [WHEEL.localX, WHEEL.rearZ],
+    [-w.localX, w.frontZ], [w.localX, w.frontZ],
+    [-w.localX, w.rearZ], [w.localX, w.rearZ],
   ]) {
-    const w = makeWheel();
-    w.position.set(x, WHEEL.radius, z);
-    group.add(w);
-    spinPivots.push(w.userData.spinPivot);
+    const wheel = makeWheel();
+    wheel.position.set(x, wheelY, z);
+    group.add(wheel);
+    spinPivots.push(wheel.userData.spinPivot);
   }
-  return { group, spinPivots };
+
+  // carDef?.scale is an optional per-car multiplier (visual only — see
+  // ASSETS.carModels' comment on it).
+  const rigScale = CONFIG.carScale * (carDef?.scale ?? 1);
+  group.scale.setScalar(rigScale);
+  return { group, body, spinPivots, lift: liftRaw * rigScale };
 }

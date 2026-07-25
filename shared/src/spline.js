@@ -104,5 +104,48 @@ export function buildSpline(controlPoints, closed, N) {
     return outPos;
   }
 
-  return { samples, length, closed, posAt, query };
+  // Continuous closest-point projection onto the polyline, refining query()'s
+  // nearest-SAMPLE lookup by projecting onto the two segments flanking it and
+  // keeping whichever projection is actually closest (a polyline's closest
+  // point is continuous; the nearest vertex isn't — it snaps facet-to-facet).
+  // Matters wherever the tangent/side frame rotates a lot between consecutive
+  // samples, i.e. tight curvature: query() alone treats the wall/ground as a
+  // fan of flat facets meeting at each sample, which reads as felt/visible
+  // faceting on sharp corners — see collideWithBarriers (physics.js) and
+  // groundHeightAt (main.js), the two places that need the real curve instead.
+  // Returns query()'s own shape (idx, s) plus continuous arc/lateral and an
+  // interpolated side vector — a drop-in superset, safe wherever query() is used.
+  function queryProjected(pos, hint = null) {
+    const q = query(pos, hint);
+    const idx = q.idx;
+    let bestD2 = Infinity, bestArc = q.s.arc, bestLat = q.lateral;
+    let bestSide = { x: q.s.side.x, z: q.s.side.z };
+    for (let k = -1; k <= 0; k++) {
+      const ia = closed ? (idx + k + count) % count : THREE.MathUtils.clamp(idx + k, 0, count - 1);
+      const ib = closed ? (ia + 1) % count : Math.min(count - 1, ia + 1);
+      if (ia === ib) continue;
+      const a = samples[ia], b = samples[ib];
+      const ex = b.p.x - a.p.x, ez = b.p.z - a.p.z;
+      const len2 = ex * ex + ez * ez;
+      if (len2 < 1e-12) continue;
+      const u = THREE.MathUtils.clamp(((pos.x - a.p.x) * ex + (pos.z - a.p.z) * ez) / len2, 0, 1);
+      const dx = pos.x - (a.p.x + ex * u), dz = pos.z - (a.p.z + ez * u);
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        const len = Math.sqrt(len2);
+        bestArc = a.arc + u * len;
+        bestLat = (dx * ez - dz * ex) / len; // signed distance, side = (t.z, -t.x)
+        // Interpolated side vector, same blend posAt() uses to place an offset
+        // point here — keeps the wall/ground normal consistent with wherever
+        // the visual ribbon/mesh geometry actually put its own vertices.
+        const sx = a.side.x + (b.side.x - a.side.x) * u, sz = a.side.z + (b.side.z - a.side.z) * u;
+        const slen = Math.hypot(sx, sz) || 1;
+        bestSide = { x: sx / slen, z: sz / slen };
+      }
+    }
+    return { idx, s: q.s, lateral: bestLat, arc: bestArc, side: bestSide };
+  }
+
+  return { samples, length, closed, posAt, query, queryProjected };
 }
