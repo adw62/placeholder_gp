@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // =====================================================================
 // Headless completability test: laps a track with the game's REAL physics
-// (game/src/physics.js CarPhysics + collideWithWall, imported directly;
+// (game/src/physics.js CarPhysics + collideWithBarriers, imported directly;
 // substepped at 240 Hz exactly like main.js) under a simple pure-pursuit
 // driver. Proves a generated track can actually be driven — and reports
 // achieved pace vs its medalAvgSpeed targets — before a human ever loads it.
@@ -24,7 +24,8 @@ import * as THREE from "three";
 import { buildSpline } from "../../shared/src/spline.js";
 import { CONFIG } from "../../shared/src/config.js";
 import { TRACKS } from "../../game/src/tracks.js";
-import { CarPhysics, collideWithWall } from "../../game/src/physics.js";
+import { CarPhysics, collideWithBarriers } from "../../game/src/physics.js";
+import { buildBarriers } from "../../shared/src/barriers.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -69,6 +70,11 @@ const ncp = CONFIG.track.checkpoints;
 const spline = buildSpline(def.controlPoints, true, N);
 const halfW = def.width / 2;
 const wallDist = halfW + CONFIG.track.wallMargin;
+// Collision is against world-space barrier segments now (shared/src/barriers.js).
+// This tool models a uniform margin — no trackObjects/barrier-band profile — so
+// every sample reports the same distance.
+const barriers = buildBarriers(spline, () => wallDist);
+const segScratch = [];
 const track = { ...spline, halfW, wallDist };
 
 // --- target-speed table from the live physics params (same structure as
@@ -108,7 +114,7 @@ let stuckT = 0, recoveries = 0, reverseUntil = -1;
 let failed = null;
 
 while (lapsDone < LAPS && raceT < budget) {
-  let q = track.query(car.pos, lastIdx);
+  let q = track.queryProjected(car.pos, lastIdx);
   lastIdx = q.idx;
   const arc = spline.samples[q.idx].arc;
 
@@ -141,9 +147,9 @@ while (lapsDone < LAPS && raceT < budget) {
   const h = dt / steps;
   for (let i = 0; i < steps; i++) {
     car.update(h, input, surface);
-    q = track.query(car.pos, lastIdx);
+    q = track.queryProjected(car.pos, lastIdx);
     lastIdx = q.idx;
-    const impact = collideWithWall(car, q, wallDist);
+    const impact = collideWithBarriers(car, barriers, segScratch);
     if (impact > 2.5) {
       wallHits++;
       maxImpact = Math.max(maxImpact, impact);
