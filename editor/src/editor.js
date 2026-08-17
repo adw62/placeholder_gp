@@ -15,7 +15,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { buildTrack } from "../../shared/src/track.js";
 import { buildSpline } from "../../shared/src/spline.js";
-import { buildEnvironment, applyTheme, mulberry32, hashSeed } from "../../shared/src/environment.js";
+import { buildEnvironment, applyTheme, mulberry32, hashSeed, sunDirection, buildSunVisual, applySunVisual, buildSkyDome, applySkyDome, DEFAULT_SUN_AZIMUTH_DEG, DEFAULT_SUN_ELEVATION_DEG, DEFAULT_SUN_VISUAL_DISTANCE } from "../../shared/src/environment.js";
 import { buildAllTrackObjects, buildTrackObjects, defaultBands, OBJECT_TYPES } from "../../shared/src/trackObjects.js";
 import { preloadAssets, updateCrowdBillboard } from "../../shared/src/placeholders.js";
 
@@ -136,6 +136,44 @@ sun.shadow.camera.far = 300;
 sun.shadow.bias = -0.0005;
 scene.add(sun, sun.target);
 
+// Visible sun disc — shares its build/appearance code with the game
+// (shared/src/environment.js) so what an author sees here while aiming the
+// sun is what actually ships, not a hand-rolled editor-only approximation.
+// Real depth test (not disabled) on purpose: occluding behind a building or
+// tunnel here is the same thing that'll happen in-game, and that's exactly
+// what "parity" needs — use the "Look at Sun" button to reframe on it.
+const sunVisual = buildSunVisual();
+scene.add(sunVisual);
+
+// Sky glow dome — same shared effect as the game, so the sunset-sky look an
+// author dials in here is exactly what ships.
+const skyDome = buildSkyDome();
+scene.add(skyDome);
+
+function trackCenter() {
+  const c = new THREE.Vector3();
+  if (!track) return c;
+  for (const s of track.samples) c.add(s.p);
+  c.divideScalar(track.samples.length);
+  return c;
+}
+
+// Repositions the real light from def.theme's sunAzimuthDeg/sunElevationDeg
+// and refreshes the sky dome's colors — called on slider drag (live, no
+// full Generate needed) and once per rebuild(). The visible sun disc's
+// position is kept centered on the camera every frame instead (tick(),
+// below) — a real sun doesn't parallax as the camera orbits.
+function updateSunFromTheme() {
+  if (!track || !def) return;
+  const c = trackCenter();
+  sun.target.position.copy(c);
+  const dir = sunDirection(def.theme);
+  const previewDist = 100; // editor shadow camera is a fixed +-90 box, not per-track fit like main.js
+  sun.position.set(c.x + dir.x * previewDist, dir.y * previewDist, c.z + dir.z * previewDist);
+  renderer.shadowMap.needsUpdate = true;
+  applySkyDome(skyDome, def.theme);
+}
+
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -159,6 +197,7 @@ function freshDef() {
       sky: 0x87ceeb, fog: 0x9cc7de, fogNear: 70, fogFar: 340,
       ground: "#4c7a3f", hill: 0x50694a, terrain: "grass",
       sun: 0xfff4e0, sunIntensity: 2.2, hemiIntensity: 0.9,
+      sunAzimuthDeg: DEFAULT_SUN_AZIMUTH_DEG, sunElevationDeg: DEFAULT_SUN_ELEVATION_DEG,
       props: { trees: 60, rocks: 12, billboards: 4 },
     },
     controlPoints: [
@@ -171,6 +210,8 @@ function freshDef() {
 
 function normalizeDef(d) {
   d.theme ??= {};
+  d.theme.sunAzimuthDeg ??= DEFAULT_SUN_AZIMUTH_DEG;
+  d.theme.sunElevationDeg ??= DEFAULT_SUN_ELEVATION_DEG;
   d.theme.props ??= {};
   d.theme.props.trees ??= 60;
   d.theme.props.rocks ??= 12;
@@ -309,9 +350,10 @@ function rebuildGuideLines() {
     if (ex.closed) pts.push(pts[0].clone());
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
     // Same always-on-top treatment as the markers (see MARKER_RENDER_ORDER's
-    // comment) — a guide line buried under terrain/objects would defeat the
-    // point of having it visible while editing.
-    const mat = new THREE.LineBasicMaterial({ color: ex.id === activeSplineId ? 0xffcc33 : 0x6d92c9, depthTest: false, depthWrite: false });
+    // comment, including why transparent: true is required) — a guide line
+    // buried under terrain/objects would defeat the point of having it
+    // visible while editing.
+    const mat = new THREE.LineBasicMaterial({ color: ex.id === activeSplineId ? 0xffcc33 : 0x6d92c9, depthTest: false, depthWrite: false, transparent: true });
     const line = new THREE.Line(geo, mat);
     line.renderOrder = MARKER_RENDER_ORDER;
     line.userData.splineId = ex.id;
@@ -361,11 +403,7 @@ function rebuild() {
     else deselectObject();
   }
 
-  const c = new THREE.Vector3();
-  for (const s of track.samples) c.add(s.p);
-  c.divideScalar(track.samples.length);
-  sun.target.position.copy(c);
-  sun.position.set(c.x + 40, 80, c.z - 30);
+  updateSunFromTheme();
 
   dirty = false;
   genBtn.classList.remove("pending");
@@ -397,12 +435,23 @@ function markDirty() {
 // scene regardless of what's in front of them in the depth buffer, so a
 // spline's nodes stay visible even when other geometry would occlude them.
 // depthWrite: false keeps them from punching holes for what renders after.
+//
+// transparent: true (even at opacity 1) is load-bearing, not decorative:
+// three.js always renders its opaque queue before its transparent queue,
+// full stop — renderOrder only re-sorts objects *within* whichever queue
+// they land in. A handful of road-surface textures (e.g. "expressway",
+// "tunnelAsphalt") carry a hair of alpha so they can sit as lifted decals
+// over the base road without z-fighting, which makes their material
+// `transparent: true` — so without this, that deck geometry (opaque-queue
+// markers vs. transparent-queue road) would silently paint over the
+// markers regardless of depthTest/renderOrder. Marking markers transparent
+// too puts them in the same queue, where renderOrder actually wins.
 const MARKER_RENDER_ORDER = 999;
 const markerGeo = new THREE.SphereGeometry(1.1, 16, 12);
-const matNormal = new THREE.MeshBasicMaterial({ color: 0x4da6ff, depthTest: false, depthWrite: false });
-const matStart = new THREE.MeshBasicMaterial({ color: 0x6dfa8f, depthTest: false, depthWrite: false });
-const matSelected = new THREE.MeshBasicMaterial({ color: 0xffcc33, depthTest: false, depthWrite: false });
-const matContext = new THREE.MeshBasicMaterial({ color: 0x555a63, depthTest: false, depthWrite: false });
+const matNormal = new THREE.MeshBasicMaterial({ color: 0x4da6ff, depthTest: false, depthWrite: false, transparent: true });
+const matStart = new THREE.MeshBasicMaterial({ color: 0x6dfa8f, depthTest: false, depthWrite: false, transparent: true });
+const matSelected = new THREE.MeshBasicMaterial({ color: 0xffcc33, depthTest: false, depthWrite: false, transparent: true });
+const matContext = new THREE.MeshBasicMaterial({ color: 0x555a63, depthTest: false, depthWrite: false, transparent: true });
 
 // The active spline's points stay interactive (bright, draggable, in the
 // `markers` array pickMarker raycasts against); every other spline's points
@@ -1107,6 +1156,7 @@ function bandRowHtml(band, idx) {
         <div><label>To %</label><input type="number" data-f="to" value="${round2((band.to ?? 1) * 100)}" step="1"></div>
         <div><label>Spacing m</label><input type="number" data-f="spacing" value="${band.spacing ?? 5}" step="0.5"></div>
         <div><label>Offset m</label><input type="number" data-f="offset" value="${round2(band.offset ?? 2)}" step="0.1"></div>
+        <div><label>Y offset m</label><input type="number" data-f="yOffset" value="${round2(band.yOffset ?? 0)}" step="0.1"></div>
         <div><label>Jitter m</label><input type="number" data-f="jitter" value="${band.jitter ?? 0}" step="0.1"></div>
         <div><label>Rows</label><input type="number" data-f="rows" value="${band.rows ?? 1}" step="1" min="1"></div>
         <div><label>Row spacing m</label><input type="number" data-f="rowSpacing" value="${band.rowSpacing ?? 1.2}" step="0.1" min="0.1"></div>
@@ -1276,6 +1326,8 @@ const fLaps = document.getElementById("fLaps"), fWidth = document.getElementById
 const fGold = document.getElementById("fGold"), fSilver = document.getElementById("fSilver"), fBronze = document.getElementById("fBronze");
 const fSky = document.getElementById("fSky"), fFog = document.getElementById("fFog");
 const fGround = document.getElementById("fGround"), fHill = document.getElementById("fHill"), fSun = document.getElementById("fSun");
+const fSunAz = document.getElementById("fSunAz"), fSunAzRange = document.getElementById("fSunAzRange");
+const fSunEl = document.getElementById("fSunEl"), fSunElRange = document.getElementById("fSunElRange");
 const fTrees = document.getElementById("fTrees"), fRocks = document.getElementById("fRocks"), fBillboards = document.getElementById("fBillboards");
 const tName = document.getElementById("tName"), tJson = document.getElementById("tJson");
 const tFile = document.getElementById("tFile");
@@ -1290,6 +1342,8 @@ function syncMetaFields() {
   fGold.value = def.medalAvgSpeed.gold; fSilver.value = def.medalAvgSpeed.silver; fBronze.value = def.medalAvgSpeed.bronze;
   fSky.value = colorToHex(def.theme.sky); fFog.value = colorToHex(def.theme.fog);
   fGround.value = def.theme.ground; fHill.value = colorToHex(def.theme.hill); fSun.value = colorToHex(def.theme.sun);
+  fSunAz.value = def.theme.sunAzimuthDeg ?? DEFAULT_SUN_AZIMUTH_DEG; fSunAzRange.value = fSunAz.value;
+  fSunEl.value = def.theme.sunElevationDeg ?? DEFAULT_SUN_ELEVATION_DEG; fSunElRange.value = fSunEl.value;
   fTrees.value = def.theme.props.trees; fRocks.value = def.theme.props.rocks; fBillboards.value = def.theme.props.billboards;
   tName.value = def.id;
 }
@@ -1307,7 +1361,23 @@ function wireMeta() {
   fFog.addEventListener("input", () => { def.theme.fog = fFog.value; markDirty(); });
   fGround.addEventListener("input", () => { def.theme.ground = fGround.value; markDirty(); });
   fHill.addEventListener("input", () => { def.theme.hill = fHill.value; markDirty(); });
-  fSun.addEventListener("input", () => { def.theme.sun = fSun.value; markDirty(); });
+  fSun.addEventListener("input", () => { def.theme.sun = fSun.value; updateSunFromTheme(); markDirty(); });
+  // Azimuth/elevation reposition the light + its visible marker live, on
+  // every drag tick — waiting for "Generate" would defeat the point of
+  // being able to see the sun while aiming it.
+  const setSunAz = (v) => { def.theme.sunAzimuthDeg = Number(v); fSunAz.value = v; fSunAzRange.value = v; updateSunFromTheme(); markDirty(); };
+  fSunAz.addEventListener("input", () => setSunAz(fSunAz.value));
+  fSunAzRange.addEventListener("input", () => setSunAz(fSunAzRange.value));
+  const setSunEl = (v) => { def.theme.sunElevationDeg = Number(v); fSunEl.value = v; fSunElRange.value = v; updateSunFromTheme(); markDirty(); };
+  fSunEl.addEventListener("input", () => setSunEl(fSunEl.value));
+  fSunElRange.addEventListener("input", () => setSunEl(fSunElRange.value));
+  // Sun marker sits wherever azimuth/elevation put it, which is very often
+  // outside the current camera framing — reorient the existing camera to
+  // look at it on demand rather than guessing which way to orbit.
+  document.getElementById("sunLookBtn").addEventListener("click", () => {
+    controls.target.copy(sunVisual.position);
+    controls.update();
+  });
   fTrees.addEventListener("input", () => { def.theme.props.trees = Number(fTrees.value) || 0; markDirty(); });
   fRocks.addEventListener("input", () => { def.theme.props.rocks = Number(fRocks.value) || 0; markDirty(); });
   fBillboards.addEventListener("input", () => { def.theme.props.billboards = Number(fBillboards.value) || 0; markDirty(); });
@@ -1315,11 +1385,13 @@ function wireMeta() {
   document.getElementById("presetGrass").addEventListener("click", () => {
     Object.assign(def.theme, { sky: 0x87ceeb, fog: 0x9cc7de, ground: "#4c7a3f", hill: 0x50694a, sun: 0xfff4e0, terrain: "grass" });
     syncMetaFields();
+    updateSunFromTheme();
     markDirty();
   });
   document.getElementById("presetDesert").addEventListener("click", () => {
     Object.assign(def.theme, { sky: 0xbfd3e0, fog: 0xd6c7a8, ground: "#c9a06a", hill: 0x8a6a48, sun: 0xffe9c4, terrain: "desert" });
     syncMetaFields();
+    updateSunFromTheme();
     markDirty();
   });
 }
@@ -1443,6 +1515,10 @@ function tick() {
     if (b.userData.noFace) continue; // static cross sprites (trees/pines) never re-face
     b.rotation.y = Math.atan2(camera.position.x - b.position.x, camera.position.z - b.position.z);
     updateCrowdBillboard(b, now, camera.position); // no-op for anything that isn't a rigged Crowd figure
+  }
+  if (def) {
+    applySunVisual(sunVisual, def.theme, camera.position, DEFAULT_SUN_VISUAL_DISTANCE);
+    skyDome.position.copy(camera.position);
   }
   renderer.render(scene, camera);
 }

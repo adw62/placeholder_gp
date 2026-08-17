@@ -23,10 +23,15 @@
       "properties": {
         "sky": { "type": "number" },
         "fog": { "type": "number" },
+        "fogNear": { "type": "number" },
+        "fogFar": { "type": "number" },
         "ground": { "type": "number" },
         "hill": { "type": "number" },
         "sun": { "type": "number" },
         "sunIntensity": { "type": "number" },
+        "hemiIntensity": { "type": "number" },
+        "sunAzimuthDeg": { "type": "number", "description": "Compass bearing (deg) of the sun's direction from track center in the XZ plane. 0=+Z, 90=+X (matches the atan2(dx,dz) heading convention used elsewhere). Default 124 — reproduces the fixed sun angle every track used before per-track control existed." },
+        "sunElevationDeg": { "type": "number", "minimum": 0, "maximum": 90, "description": "Sun elevation above horizon in degrees, 0=grazing horizon, 90=overhead. Default 51 — reproduces the fixed sun angle every track used before per-track control existed." },
         "terrain": { "enum": ["grass", "desert"] },
         "props": {
           "type": "object",
@@ -75,6 +80,7 @@
               "to": { "type": "number" },
               "spacing": { "type": "number", "minimum": 0.5, "description": "Meters between instances (curvature-corrected). For ribbon types: texture tile length; for splineTarmac: meters per texture repeat" },
               "offset": { "type": "number", "description": "Lateral offset from spline center, meters. Default: track wallDist. For splineTarmac: the strip center" },
+              "yOffset": { "type": "number", "description": "Manual vertical nudge for every instance in the band, meters — e.g. sink a building band below road level for an elevated-highway look. Building cubes are center-origin: expect roughly half the effective height to disappear below the spline before the visible base lines up where you want it" },
               "jitter": { "type": "number", "description": "Random arc-position jitter, meters" },
               "conform": { "type": "boolean", "description": "true = tilt flush with road pitch (barriers/kerbs); false = world-upright (trees)" },
               "rows": { "type": "integer", "minimum": 1, "description": "Stadium-depth rows (crowd)" },

@@ -136,6 +136,11 @@
     <div class="row"><label>Ground</label><input type="color" id="fGround"></div>
     <div class="row"><label>Hills</label><input type="color" id="fHill"></div>
     <div class="row"><label>Sun</label><input type="color" id="fSun"></div>
+    <div class="row"><label>Sun Azimuth</label><input type="number" id="fSunAz" step="1"></div>
+    <input type="range" id="fSunAzRange" min="-180" max="180" step="1">
+    <div class="row"><label>Sun Elevation</label><input type="number" id="fSunEl" step="1"></div>
+    <input type="range" id="fSunElRange" min="3" max="85" step="1">
+    <div class="btnRow"><button class="wide" id="sunLookBtn">Look at Sun</button></div>
 
     <div class="gTitle">Ambient scatter (random fill)</div>
     <div class="row"><label>Trees</label><input type="number" id="fTrees" min="0" step="1"></div>

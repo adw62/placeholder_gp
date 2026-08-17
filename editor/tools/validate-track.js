@@ -37,16 +37,22 @@ const SHARED = path.join(ROOT, "..", "shared");
 // source (can't import it in Node — it builds canvas textures at module
 // scope). Keep the static list in sync with trackObjects.js.
 const STATIC_TYPES = [
-  "barrier", "apexKerb", "tireBarrier", "tree", "building", "billboard", "crowd",
-  "splineBarrier", "splineApexKerb", "splineTarmac",
+  "barrier", "apexKerb", "tireBarrier", "tree", "building", "pillar", "lampTokyo", "billboard", "crowd",
+  "splineBarrier", "splineApexKerb", "splineTarmac", "splineTunnel",
 ];
-const RIBBON_TYPES = new Set(["splineBarrier", "splineApexKerb", "splineTarmac"]);
+const RIBBON_TYPES = new Set(["splineBarrier", "splineApexKerb", "splineTarmac", "splineTunnel"]);
 function spriteFolderKeys() {
   const src = fs.readFileSync(path.join(SHARED, "src/placeholders.js"), "utf8");
   const block = src.match(/spriteFolders:\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";
   return [...block.matchAll(/^\s*(\w+):\s*\{\s*folder:\s*"([^"]+)"/gm)].map((m) => ({ key: m[1], folder: m[2] }));
 }
+function ribbonFolderKeys() {
+  const src = fs.readFileSync(path.join(SHARED, "src/placeholders.js"), "utf8");
+  const block = src.match(/ribbonFolders:\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";
+  return [...block.matchAll(/^\s*(\w+):\s*"([^"]+)"/gm)].map((m) => m[1]);
+}
 const SPRITES = spriteFolderKeys();
+const RIBBON_ATLAS_KEYS = ribbonFolderKeys();
 const KNOWN_TYPES = new Set([
   ...STATIC_TYPES,
   ...SPRITES.map(({ key }) => `cutout${key[0].toUpperCase()}${key.slice(1)}`),
@@ -158,6 +164,10 @@ function checkTrackObjects(r, trackObjects, where, splineLength) {
       if (!ROAD_TEXTURES.includes(tex))
         r.err(`${at}: tex "${tex}" not in assets/textures/road/ (have: ${ROAD_TEXTURES.join(", ") || "none"})`);
     }
+    if (band.type === "splineBarrier" && band.tex !== undefined && !RIBBON_ATLAS_KEYS.includes(band.tex))
+      r.err(`${at}: tex "${band.tex}" not in ASSETS.ribbonFolders (have: ${RIBBON_ATLAS_KEYS.join(", ") || "none"})`);
+    if (band.type === "splineTunnel" && band.side !== undefined && band.side !== "left")
+      r.warn(`${at}: splineTunnel is a single full-width structure — side should be "left" (a "both"/"right" call is a no-op or a duplicate build, not a second wall)`);
     const m = band.type.match(/^cutout(\w)(\w*)$/);
     if (m) {
       const key = m[1].toLowerCase() + m[2];
