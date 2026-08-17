@@ -26,7 +26,9 @@ import { CONFIG } from "./config.js";
 import { buildSpline } from "./spline.js";
 import {
   buildTree, buildBillboard, buildBarrier, buildApexKerb, buildTireBarrier, buildBuilding, buildCutoutSprite, buildCrowdFigure,
+  buildPillar, buildLampTokyo, buildLightCone,
   kerbTexture, getRoadTexture, getRibbonAtlas, ASSETS,
+  tunnelWallTexture, tunnelCeilingTexture,
   BARRIER_HALF_THICKNESS, BARRIER_HALF_LENGTH, TIRE_RADIUS,
 } from "./placeholders.js";
 
@@ -36,6 +38,13 @@ export const OBJECT_TYPES = {
   tireBarrier: { label: "Tire Barrier", build: buildTireBarrier },
   tree: { label: "Tree", build: buildTree },
   building: { label: "Building", build: buildBuilding },
+  // Concrete overpass support column — origin at the top (see buildPillar),
+  // so a point's scaleY is literally "how tall," hanging down to the ground.
+  pillar: { label: "Pillar", build: buildPillar },
+  // Real 3D mast-arm streetlamp (pole + arm + fixture + its own light/cone
+  // at a fixed local position) — see buildLampTokyo for why this isn't the
+  // cutoutLampTokyo billboard.
+  lampTokyo: { label: "Lamp (Tokyo)", build: buildLampTokyo },
   billboard: { label: "Billboard", build: buildBillboard },
   // Rigged crowd figure (crowdEditor.html + src/crowd.js) — shares the
   // Cutout types' placement/facing machinery. Bands support multiple rows
@@ -44,6 +53,13 @@ export const OBJECT_TYPES = {
   splineBarrier: { label: "Spline Barrier", ribbon: true, buildRibbon: buildSplineBarrierRibbon },
   splineApexKerb: { label: "Spline Apex Kerb", ribbon: true, buildRibbon: buildSplineApexKerbRibbon },
   splineTarmac: { label: "Spline Tarmac", ribbon: true, buildRibbon: buildSplineTarmacRibbon },
+  // Enclosing tunnel bore (walls + ceiling + a few interior lights) over a
+  // band's from/to range — a real 3D structure, not a texture swap. It's a
+  // single full-width structure, not a per-side thing, so bands using this
+  // type should set side: "left" (one call); buildSplineTunnelRibbon ignores
+  // the "right"/negative-sign call so an accidental side:"both" doesn't
+  // double it up.
+  splineTunnel: { label: "Spline Tunnel", ribbon: true, buildRibbon: buildSplineTunnelRibbon },
 };
 
 // One "cutout" type per registered sprite folder (spriteFolders.tree ->
@@ -260,6 +276,7 @@ function placeBand(group, spline, band, rng, billboards, splineId, bandIndex) {
   const spacing = Math.max(0.5, band.spacing ?? 5);
   const jitter = band.jitter ?? 0;
   const offset = band.offset ?? spline.wallDist ?? 0;
+  const yOffset = band.yOffset ?? 0;
   const conform = band.conform ?? false;
   const scale = { x: band.scaleX ?? 1, y: band.scaleY ?? 1, z: band.scaleZ ?? 1 };
   const rotX = band.rotX ?? 0, rotY = band.rotY ?? 0, rotZ = band.rotZ ?? 0;
@@ -276,6 +293,7 @@ function placeBand(group, spline, band, rng, billboards, splineId, bandIndex) {
         spline.posAt(s + jit, n, _pos, _tan, _side);
         const obj = type.build(rng);
         obj.position.copy(_pos);
+        obj.position.y += yOffset; // manual vertical nudge for the whole band — same convention as a point's yOffset
         applyScale(obj, scale);
         if (type.billboard) billboards.push(obj);
         else orient(obj, _tan, _side, conform, { x: rotX, y: rotY + (sign < 0 ? Math.PI : 0), z: rotZ });
@@ -408,11 +426,64 @@ function buildSplineBarrierRibbon(spline, band, sign, rng) {
   const toS = (band.to ?? 1) * spline.length;
   const offset = (band.offset ?? spline.wallDist ?? 0) * sign;
   const tileLength = Math.max(1, band.spacing ?? 6);
-  const atlas = getRibbonAtlas("barrier");
+  // band.tex opts into a differently-themed ribbon atlas (see
+  // ASSETS.ribbonFolders) instead of the default shared "barrier" one —
+  // same convention as splineTarmac's tex field, different lookup table.
+  const atlas = getRibbonAtlas(band.tex ?? "barrier");
   const geo = ribbonWallGeometry(spline, fromS, toS, offset, CONFIG.track.wallHeight, atlas.count, tileLength, rng, sign < 0);
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: atlas.texture, roughness: 0.7, side: THREE.DoubleSide }));
   mesh.receiveShadow = mesh.castShadow = true;
   return mesh;
+}
+
+// Real enclosing tunnel bore: two solid concrete walls + a ceiling capping
+// them, plus a handful of real interior point lights (the bore blocks
+// sun/hemi, so without these it'd just go black). Ignores `sign` — this is
+// one full-width structure regardless of how many times signsFor() calls it
+// (see the "side: left" note on the OBJECT_TYPES entry above).
+function buildSplineTunnelRibbon(spline, band, sign, rng) {
+  const group = new THREE.Group();
+  if (sign < 0) return group; // guards against an accidental side:"both" doubling the structure
+  const fromS = (band.from ?? 0) * spline.length;
+  const toS = (band.to ?? 1) * spline.length;
+  const halfSpan = band.offset ?? (spline.wallDist ?? 3.5) + 0.5;
+  const boreHeight = band.height ?? 4.6;
+  const tileLength = Math.max(1, band.spacing ?? 5);
+
+  const wallMat = new THREE.MeshStandardMaterial({ map: tunnelWallTexture(), roughness: 0.85, side: THREE.DoubleSide });
+  for (const s of [1, -1]) {
+    const geo = ribbonWallGeometry(spline, fromS, toS, halfSpan * s, boreHeight, 1, tileLength, rng, s < 0);
+    const wall = new THREE.Mesh(geo, wallMat);
+    wall.receiveShadow = wall.castShadow = true;
+    group.add(wall);
+  }
+
+  const roofGeo = ribbonFlatGeometry(spline, fromS, toS, -halfSpan, halfSpan, boreHeight, 1 / tileLength);
+  const roof = new THREE.Mesh(roofGeo, new THREE.MeshStandardMaterial({
+    map: tunnelCeilingTexture(), roughness: 0.9, side: THREE.DoubleSide,
+  }));
+  roof.receiveShadow = true;
+  group.add(roof);
+
+  // Sparse interior lighting along the bore's own length — independent of
+  // any lamp band outside; a tunnel needs to light itself.
+  const lightSpacing = Math.max(6, band.lightSpacing ?? 13);
+  const len = toS - fromS;
+  const n = Math.max(1, Math.round(len / lightSpacing));
+  const pos = new THREE.Vector3();
+  for (let i = 0; i <= n; i++) {
+    spline.posAt(fromS + (i / n) * len, 0, pos);
+    const lightY = pos.y + boreHeight * 0.82;
+    const light = new THREE.PointLight(0xffcf9a, 1.3, boreHeight * 3.4, 2);
+    light.position.set(pos.x, lightY, pos.z);
+    light.castShadow = false;
+    group.add(light);
+    const cone = buildLightCone(0xffcf9a, halfSpan * 0.5, lightY - pos.y, 0.09); // full height so the base touches the road, not hovering short of it
+    cone.position.set(pos.x, lightY, pos.z);
+    group.add(cone);
+  }
+
+  return group;
 }
 
 function buildSplineApexKerbRibbon(spline, band, sign) {
@@ -439,7 +510,12 @@ function buildSplineTarmacRibbon(spline, band, sign) {
   const name = band.tex ?? "asphalt";
   if (!_tarmacMats.has(name)) {
     const { texture, hasAlpha } = getRoadTexture(name);
-    const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95 });
+    // DoubleSide: ribbonFlatGeometry winds faces up (for the common
+    // ground-level road case, only ever seen from above) — but a
+    // splineTarmac band can also be an elevated deck (an overpass on an
+    // extraSpline) that a car drives underneath, which needs the underside
+    // visible too. Trivial extra overdraw for a thin strip either way.
+    const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95, side: THREE.DoubleSide });
     if (hasAlpha) { mat.transparent = true; mat.depthWrite = false; }
     mat.userData.shared = true;
     _tarmacMats.set(name, mat);

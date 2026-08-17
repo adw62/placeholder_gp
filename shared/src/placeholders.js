@@ -86,6 +86,12 @@ export const ASSETS = {
   // they show up next boot/race — no code edit needed.
   ribbonFolders: {
     barrier: "assets/textures/barriers/",
+    // Separate atlas key so a track can opt a splineBarrier band into this
+    // set via `tex: "barrierExpressway"` (mirrors splineTarmac's `tex`
+    // field) instead of pulling from the shared `barrier` atlas above —
+    // keeps themed variants (no sponsor-board branding here) from mixing
+    // with whatever other tracks' barrier art lives in that folder.
+    barrierExpressway: "assets/textures/barriersExpressway/",
   },
   // Road-surface textures for the "Spline Tarmac" ribbon, discovered the
   // same way. Each file is one named surface a band picks via its `tex`
@@ -112,9 +118,33 @@ export const ASSETS = {
     pine: { folder: "assets/textures/pine/", width: 4.2, height: 5.6, cross: true },
     ruins: { folder: "assets/textures/ruins/", width: 24, height: 9, static: true },
     skyline: { folder: "assets/textures/skyline/", width: 64, height: 12, static: true },
+    // Dense illuminated Tokyo-style skyscraper skyline silhouette (distinct
+    // from the shared Roman-ish `skyline` folder above, which other tracks
+    // already depend on) — a backdrop, so static: true.
+    citySkyline: { folder: "assets/textures/citySkyline/", width: 64, height: 12, static: true },
+    // Overhead expressway gantry sign — full-height support legs reach the
+    // image's own bottom edge (ground contact baked in, base plates and
+    // all), truss + sign panels sit at the top, and the whole middle/lower
+    // span between the legs is transparent for a car to drive through.
+    // Place at offset 0 with yOffset 0 (or omit) — no manual lift needed,
+    // unlike a plain billboard cutout. static: true (fixed sign bridge, not
+    // camera-facing).
+    gantry: { folder: "assets/textures/gantry/", width: 12, height: 7.5, static: true },
     // City-track dressing kit — flat cutouts by design (cheap, and each is
     // replaceable by dropping a photo in its folder, like everything above).
     lamp: { folder: "assets/textures/lamp/", width: 0.95, height: 2.1 },
+    // Tall single-arm expressway sodium lamp, distinct from the ornate
+    // plaza `lamp` above. `light` is an opt-in extra: buildCutoutSprite()
+    // attaches a real (non-shadow-casting) THREE.PointLight positioned near
+    // the fixture head to any spriteFolder entry that sets it — used here so
+    // a night track can actually be lit by its own lamp posts rather than
+    // just flat ambient/hemi. Keep instances of a `light`-tagged type
+    // sparsely spaced (tens of meters apart): every placed instance is a
+    // real dynamic light, and this renderer only has the sun+hemi otherwise.
+    lampTokyo: {
+      folder: "assets/textures/lampTokyo/", width: 1.3, height: 7.2,
+      light: { color: 0xffb066, intensity: 1.6, distance: 17, decay: 2, heightFrac: 0.84 },
+    },
     flag: { folder: "assets/textures/flag/", width: 1.3, height: 2.6 },
     obelisk: { folder: "assets/textures/obelisk/", width: 1.6, height: 4.8 },
     chevron: { folder: "assets/textures/chevron/", width: 2.2, height: 1.05, static: true },
@@ -217,6 +247,7 @@ export async function preloadAssets() {
     jobs.push(loadGLTF(gamePath(car.url)).then((m) => modelCache.set(carKey(car.id), m)));
   }
   jobs.push(loadRibbonAtlas("barrier", gamePath(ASSETS.ribbonFolders.barrier), drawFallbackBarrierVariants));
+  jobs.push(loadRibbonAtlas("barrierExpressway", gamePath(ASSETS.ribbonFolders.barrierExpressway), drawFallbackBarrierVariants));
   if (ASSETS.roadFolder) jobs.push(loadRoadTextures(gamePath(ASSETS.roadFolder)));
   for (const [key, spec] of Object.entries(ASSETS.spriteFolders)) {
     jobs.push(loadCutoutVariants(key, spec.folder ? gamePath(spec.folder) : spec.folder));
@@ -314,6 +345,64 @@ export function kerbTexture() {
     for (let i = 0; i < 4; i++) {
       ctx.fillStyle = i % 2 ? "#e8e8e8" : "#d3382e";
       ctx.fillRect(i * (w / 4), 0, w / 4, h);
+    }
+  });
+}
+
+// Enclosing tunnel bore walls/ceiling (see trackObjects.js's splineTunnel) —
+// plain procedural concrete, not the sponsor-atlas system: a tunnel bore
+// should read as one consistent structure, not sponsor-board variety.
+export function tunnelWallTexture() {
+  return canvasTexture(64, 64, (ctx, w, h) => {
+    ctx.fillStyle = "#4a4d52";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    for (let i = 0; i <= 4; i++) {
+      const x = (i / 4) * w;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    }
+    for (let i = 0; i < 40; i++) {
+      const g = 40 + Math.random() * 30;
+      ctx.fillStyle = `rgba(${g | 0},${g | 0},${(g + 3) | 0},${0.12 + Math.random() * 0.18})`;
+      ctx.fillRect(Math.random() * w, 0, 1, h);
+    }
+  });
+}
+
+export function tunnelCeilingTexture() {
+  return canvasTexture(64, 32, (ctx, w, h) => {
+    ctx.fillStyle = "#35373b";
+    ctx.fillRect(0, 0, w, h);
+    // embedded fluorescent light strip down the middle (v isn't tiled on a
+    // ribbonFlatGeometry roof, so this sits as one continuous line the
+    // length of the tunnel)
+    ctx.fillStyle = "rgba(255,225,180,0.55)";
+    ctx.fillRect(0, h * 0.28, w, h * 0.44);
+    ctx.fillStyle = "#ffdca0";
+    ctx.fillRect(0, h * 0.42, w, h * 0.16);
+  });
+}
+
+// Overpass pier — lighter than tunnelWallTexture on purpose (a pier stands
+// against open night sky/distant buildings, not lit tunnel walls, so it
+// needs its own contrast to read at a glance) with a painted hazard band
+// near its base, same convention as real elevated-highway piers.
+export function pillarTexture() {
+  return canvasTexture(64, 64, (ctx, w, h) => {
+    ctx.fillStyle = "#a8a8ac";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(70,70,74,0.6)";
+    for (const sy of [0, h / 3, (h * 2) / 3, h]) {
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+    }
+    // Drawn near both texture edges, not just one — CanvasTexture v-flip
+    // convention isn't worth pinning down for a decorative stripe; this way
+    // it reads right regardless of which end lands at the ground.
+    const bandH = h * 0.14;
+    for (let i = 0, x = 0; x < w; i++, x += w / 8) {
+      ctx.fillStyle = i % 2 === 0 ? "#ebb21e" : "#1e1e1c";
+      ctx.fillRect(x, h - bandH, w / 8, bandH);
+      ctx.fillRect(x, 0, w / 8, bandH);
     }
   });
 }
@@ -645,6 +734,86 @@ export function buildRock(rng) {
   return g;
 }
 
+// Concrete support pier for an elevated deck (e.g. an overpass extraSpline's
+// "pillar" points) — a plain tapered column. Origin is at the TOP (geometry
+// translated so it spans local y = -1..0) so a point placed AT deck height
+// with scaleY = (deck height above ground) hangs straight down and plants
+// itself in the ground without needing a separate yOffset per instance.
+let _pillarGeo = null, _pillarMat = null;
+function pillarAssets() {
+  if (_pillarMat) return;
+  const shaft = new THREE.CylinderGeometry(0.85, 1.3, 1, 10);
+  shaft.translate(0, -0.5, 0);
+  _pillarGeo = shaft;
+  _pillarMat = new THREE.MeshStandardMaterial({ map: pillarTexture(), roughness: 0.85 });
+  _pillarGeo.userData.shared = true;
+  _pillarMat.userData.shared = true;
+}
+export function buildPillar(rng) {
+  pillarAssets();
+  const mesh = new THREE.Mesh(_pillarGeo, _pillarMat);
+  mesh.castShadow = mesh.receiveShadow = true;
+  return mesh;
+}
+
+// Real 3D Tokyo-expressway mast-arm sodium lamp — a "real real 3D prop", not
+// a billboard: a cutout re-faces the camera every frame, which means its arm
+// (and therefore its bulb) doesn't sit at a fixed point in world space, so a
+// light/cone attached to "the bulb" can never actually line up with the art.
+// A rigid mesh has no such problem — pole, arm, and fixture are one fixed
+// shape, and the light/cone are parented at the fixture's exact local
+// position. Faces along the object's local +Z like every other non-billboard
+// prop here (orient() in trackObjects.js sets yaw from track tangent); the
+// arm reaches out along local -X — pick the placing band's `side` so that's
+// toward the road, or add rotY: Math.PI on the band if it comes out backwards.
+const LAMP_POLE_HEIGHT = 6.2;
+const LAMP_ARM_END = new THREE.Vector3(-1.7, 6.85, 0);
+let _lampPoleGeo = null, _lampArmGeo = null, _lampFixtureGeo = null, _lampMetalMat = null, _lampBulbMat = null;
+
+function lampAssets() {
+  if (_lampMetalMat) return;
+  _lampPoleGeo = new THREE.CylinderGeometry(0.09, 0.13, LAMP_POLE_HEIGHT, 8);
+  _lampPoleGeo.translate(0, LAMP_POLE_HEIGHT / 2, 0);
+  const armVec = LAMP_ARM_END.clone().sub(new THREE.Vector3(0, LAMP_POLE_HEIGHT, 0));
+  _lampArmGeo = new THREE.CylinderGeometry(0.06, 0.08, armVec.length(), 6);
+  _lampArmGeo.translate(0, armVec.length() / 2, 0); // base at the local origin, tip toward +Y, before the tilt below
+  _lampArmGeo.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), armVec.clone().normalize()));
+  _lampFixtureGeo = new THREE.BoxGeometry(0.5, 0.18, 0.3);
+  _lampMetalMat = std(0x33363c, { metalness: 0.4, roughness: 0.55 });
+  _lampBulbMat = new THREE.MeshStandardMaterial({ color: 0xfff0d0, emissive: 0xffb066, emissiveIntensity: 2.2, roughness: 0.4 });
+  for (const shared of [_lampPoleGeo, _lampArmGeo, _lampFixtureGeo, _lampMetalMat, _lampBulbMat]) shared.userData.shared = true;
+}
+
+export function buildLampTokyo(rng) {
+  lampAssets();
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(_lampPoleGeo, _lampMetalMat);
+  pole.position.set(0, 0, 0);
+  pole.castShadow = true;
+  g.add(pole);
+  const arm = new THREE.Mesh(_lampArmGeo, _lampMetalMat);
+  arm.position.set(0, LAMP_POLE_HEIGHT, 0);
+  arm.castShadow = true;
+  g.add(arm);
+  const fixture = new THREE.Mesh(_lampFixtureGeo, _lampMetalMat);
+  fixture.position.copy(LAMP_ARM_END);
+  fixture.castShadow = true;
+  g.add(fixture);
+  const bulb = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.22), _lampBulbMat);
+  bulb.position.set(LAMP_ARM_END.x, LAMP_ARM_END.y - 0.1, LAMP_ARM_END.z);
+  bulb.rotation.x = -Math.PI / 2; // face down at the road
+  g.add(bulb);
+
+  const light = new THREE.PointLight(0xffb066, 1.6, 17, 2);
+  light.position.set(LAMP_ARM_END.x, LAMP_ARM_END.y - 0.1, LAMP_ARM_END.z);
+  light.castShadow = false;
+  g.add(light);
+  const cone = buildLightCone(0xffb066, 17 * 0.22, light.position.y, 0.1);
+  cone.position.copy(light.position);
+  g.add(cone);
+  return g;
+}
+
 // Short Armco-style guardrail — the default "barrier" type. Geometry/
 // material are cached module-level singletons (100+ instances per track;
 // per-instance canvas generation was the dominant slow-rebuild cost).
@@ -871,6 +1040,40 @@ function ensureCutoutVariants(key) {
   if (!cutoutMaterialCache.has(key)) cutoutMaterialCache.set(key, [makeCutoutMaterial(cutoutFallbackTexture(key))]);
 }
 
+// Faked volumetric light cone — no real scattering, just a soft additive
+// translucent cone hanging from a light source down toward the road. Apex
+// (the narrow tip) sits at local origin so a caller can just position this
+// at the light itself; the cone widens as it drops. Geometry/material are
+// cached per distinct (radius, height) / (color, radius, height, opacity)
+// combo since every light of a given kind (all lamps, all tunnel lights)
+// shares the same numbers.
+const _lightConeGeoCache = new Map();
+function lightConeGeometry(radius, height) {
+  const key = `${radius}_${height}`;
+  let geo = _lightConeGeoCache.get(key);
+  if (!geo) {
+    geo = new THREE.ConeGeometry(radius, height, 16, 1, true);
+    geo.translate(0, -height / 2, 0); // ConeGeometry's apex defaults to +y; shift so the apex lands at y=0
+    geo.userData.shared = true;
+    _lightConeGeoCache.set(key, geo);
+  }
+  return geo;
+}
+const _lightConeMatCache = new Map();
+export function buildLightCone(color, radius = 3, height = 6, opacity = 0.1) {
+  const key = `${color}_${radius}_${height}_${opacity}`;
+  let mat = _lightConeMatCache.get(key);
+  if (!mat) {
+    mat = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity, blending: THREE.AdditiveBlending,
+      depthWrite: false, side: THREE.DoubleSide, fog: false,
+    });
+    mat.userData.shared = true;
+    _lightConeMatCache.set(key, mat);
+  }
+  return new THREE.Mesh(lightConeGeometry(radius, height), mat);
+}
+
 export function buildCutoutSprite(key, rng) {
   ensureCutoutVariants(key);
   const mats = cutoutMaterialCache.get(key);
@@ -889,6 +1092,24 @@ export function buildCutoutSprite(key, rng) {
     // noFace flag just skips the rotation update.
     g.userData.noFace = true;
     plane.rotation.y = rng() * Math.PI * 2;
+  }
+  if (spec.light) {
+    const l = spec.light;
+    const light = new THREE.PointLight(l.color ?? 0xffffff, l.intensity ?? 1, l.distance ?? 12, l.decay ?? 2);
+    light.position.y = height * (l.heightFrac ?? 0.9);
+    light.castShadow = false; // opt-in dynamic lights stay cheap — no shadow maps
+    g.add(light);
+    // coneHeight defaults to the light's own height above the group origin
+    // (ground) so the cone's base actually touches the floor instead of
+    // hovering short of it.
+    const cone = buildLightCone(
+      l.color ?? 0xffffff,
+      l.coneRadius ?? (l.distance ?? 12) * 0.22,
+      l.coneHeight ?? light.position.y,
+      l.coneOpacity ?? 0.1
+    );
+    cone.position.y = light.position.y;
+    g.add(cone);
   }
   return g;
 }

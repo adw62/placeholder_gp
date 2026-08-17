@@ -9,7 +9,7 @@ import { CONFIG } from "../../shared/src/config.js";
 import { TRACKS } from "./tracks.js";
 import { loadLevels } from "./levels.js";
 import { buildTrack } from "../../shared/src/track.js";
-import { buildEnvironment, applyTheme, mulberry32, hashSeed } from "../../shared/src/environment.js";
+import { buildEnvironment, applyTheme, mulberry32, hashSeed, sunDirection, buildSunVisual, applySunVisual, buildSkyDome, applySkyDome, DEFAULT_SUN_VISUAL_DISTANCE } from "../../shared/src/environment.js";
 import { buildAllTrackObjects } from "../../shared/src/trackObjects.js";
 import { CarPhysics, collideWithBarriers, barrierPenetration, contactPoint } from "./physics.js";
 import { AIRacer } from "./ai.js";
@@ -65,6 +65,18 @@ sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.bias = -0.0005;
 sun.shadow.normalBias = 0.5;
 scene.add(sun, sun.target);
+
+// Visible sun disc — the DirectionalLight above lights the scene but has no
+// visual presence on its own. Shared with the editor (environment.js) so
+// what an author sees while aiming the sun there is what actually ships.
+const sunVisual = buildSunVisual();
+scene.add(sunVisual);
+
+// Sky glow dome — huge inward-facing sphere that blends the track's base
+// sky color toward the sun's own color around the sun's actual direction,
+// so a low sun visibly warms the sky instead of sitting on a flat backdrop.
+const skyDome = buildSkyDome();
+scene.add(skyDome);
 
 // PS1 internal resolution: render at CONFIG.render.internalHeight (~240p),
 // stretch the canvas over the window with nearest-neighbor upscaling. The
@@ -355,6 +367,7 @@ function startRace(def) {
   const track = buildTrack(def);
   scene.add(track.group);
   applyTheme(def.theme, scene, sun, hemi);
+  applySkyDome(skyDome, def.theme);
   const env = buildEnvironment(def, track, rng);
   scene.add(env);
   const { group: objects, billboards } = buildAllTrackObjects(def, track, rng);
@@ -402,8 +415,13 @@ function startRace(def) {
   const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
   const shadowR = Math.max(maxX - minX, maxZ - minZ) / 2 + 110; // scatter reaches ~90 m past the walls
   const sunDist = shadowR * 2.5;
-  sun.position.set(cx + 0.52 * sunDist, 0.78 * sunDist, cz - 0.35 * sunDist);
+  const dir = sunDirection(def.theme);
+  sun.position.set(cx + dir.x * sunDist, dir.y * sunDist, cz + dir.z * sunDist);
   sun.target.position.set(cx, 0, cz);
+  // sunVisual/skyDome positions are kept centered on the camera every frame
+  // (tick(), below) instead of here — a real sun doesn't parallax as you
+  // drive, so anchoring it to the track center like the shadow-casting
+  // light would make it visibly drift as the car moves across a big track.
   sun.shadow.camera.left = sun.shadow.camera.bottom = -shadowR;
   sun.shadow.camera.right = sun.shadow.camera.top = shadowR;
   sun.shadow.camera.near = Math.max(1, sunDist - shadowR * 2);
@@ -1168,6 +1186,10 @@ function tick(now = performance.now()) {
   const dt = Math.min(0.05, raw);
   lastTime = now;
   if (race && !paused) step(now, dt);
+  if (lastDef) {
+    applySunVisual(sunVisual, lastDef.theme, camera.position, DEFAULT_SUN_VISUAL_DISTANCE);
+    skyDome.position.copy(camera.position);
+  }
   renderer.render(scene, camera);
   if (perf.on) perfSample(now, raw);
 }
