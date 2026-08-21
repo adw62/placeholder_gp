@@ -49,7 +49,7 @@ import { TRACKS } from "../game/src/tracks.js";
 import { loadLevels } from "../game/src/levels.js";
 import { buildTrack } from "../shared/src/track.js";
 import { buildEnvironment, applyTheme, mulberry32, hashSeed } from "../shared/src/environment.js";
-import { buildAllTrackObjects, defaultBands } from "../shared/src/trackObjects.js";
+import { buildAllTrackObjects, defaultBands, updateOceanTime } from "../shared/src/trackObjects.js";
 import { preloadAssets, updateCrowdBillboard } from "../shared/src/placeholders.js";
 
 const q = new URLSearchParams(location.search);
@@ -70,6 +70,7 @@ sun.position.set(30, 45, -20);
 scene.add(hemi, sun, sun.target);
 
 let billboards = [];
+let waterMeshes = [];
 let controls = null;
 
 function fail(msg) {
@@ -96,10 +97,12 @@ async function init() {
   def.trackObjects.points ??= [];
   def.trackObjects.bands ??= [];
   const rng = mulberry32(hashSeed(def.id || "untitled"));
-  scene.add(buildEnvironment(def, track, rng));
+  const env = buildEnvironment(def, track, rng);
+  scene.add(env);
   const objs = buildAllTrackObjects(def, track, rng);
   scene.add(objs.group);
   billboards = objs.billboards;
+  waterMeshes = objs.waterMeshes;
 
   placeCamera(track);
   if (q.get("orbit")) {
@@ -112,6 +115,7 @@ async function init() {
   renderer.setAnimationLoop(() => {
     const now = performance.now();
     controls?.update();
+    updateOceanTime(waterMeshes, now);
     for (const b of billboards) {
       if (b.userData.noFace) continue;
       b.rotation.y = Math.atan2(camera.position.x - b.position.x, camera.position.z - b.position.z);

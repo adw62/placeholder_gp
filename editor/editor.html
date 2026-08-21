@@ -62,6 +62,8 @@
   button.danger { background: rgba(200,60,50,0.35); }
   button.small { padding: 3px 6px; font-size: 10px; }
   button.wide { flex: 1; }
+  button:disabled { opacity: 0.35; cursor: default; }
+  button:disabled:hover { background: rgba(255,255,255,0.12); }
 
   #generateBtn {
     width: 100%; padding: 10px; font-size: 13px; margin-bottom: 10px;
@@ -113,6 +115,10 @@
   <div class="head">TRACK</div>
   <div class="body">
     <button id="generateBtn">Generate</button>
+    <div class="btnRow">
+      <button class="wide" id="undoBtn" title="Undo (Ctrl+Z)">&#8630; Undo</button>
+      <button class="wide" id="redoBtn" title="Redo (Ctrl+Shift+Z)">&#8631; Redo</button>
+    </div>
     <div class="gTitle">Meta</div>
     <div class="row"><label>ID</label><input type="text" id="fId"></div>
     <div class="row"><label>Name</label><input type="text" id="fName"></div>
@@ -227,7 +233,8 @@
   <b>Select / Transform</b>: click a placed object for Translate/Rotate/Scale gizmo handles, Del to remove &nbsp;
   clicking a band-placed instance (crowd, lamp, wall…) in either tab's Select mode jumps to its band row instead — bands are edited by their numbers, not per instance &nbsp;
   <b>Shift</b> (while an object is selected): cycle Translate/Rotate/Scale &nbsp;
-  moving anything is instant — press <b>Generate</b> to rebuild the road/terrain/objects
+  moving anything is instant — press <b>Generate</b> to rebuild the road/terrain/objects &nbsp;
+  <b>Ctrl+Z</b> undo / <b>Ctrl+Shift+Z</b> redo — one step per drag, field edit or placement
 </div>
 
 <script type="importmap">

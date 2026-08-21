@@ -16,7 +16,7 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { buildTrack } from "../../shared/src/track.js";
 import { buildSpline } from "../../shared/src/spline.js";
 import { buildEnvironment, applyTheme, mulberry32, hashSeed, sunDirection, buildSunVisual, applySunVisual, buildSkyDome, applySkyDome, DEFAULT_SUN_AZIMUTH_DEG, DEFAULT_SUN_ELEVATION_DEG, DEFAULT_SUN_VISUAL_DISTANCE } from "../../shared/src/environment.js";
-import { buildAllTrackObjects, buildTrackObjects, defaultBands, OBJECT_TYPES } from "../../shared/src/trackObjects.js";
+import { buildAllTrackObjects, buildTrackObjects, defaultBands, OBJECT_TYPES, updateOceanTime } from "../../shared/src/trackObjects.js";
 import { preloadAssets, updateCrowdBillboard } from "../../shared/src/placeholders.js";
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -262,7 +262,7 @@ function loadDraft() {
 }
 
 let def = null;
-let track = null, env = null, objects = null, guideLines = null, billboards = [];
+let track = null, env = null, objects = null, guideLines = null, billboards = [], waterMeshes = [];
 let markers = [], contextMarkers = [];
 let selected = -1; // index into the active spline's own controlPoints (Splines tab)
 let paletteType = "barrier";
@@ -388,7 +388,7 @@ function rebuild() {
   const rng = mulberry32(hashSeed(def.id || "untitled"));
   env = buildEnvironment(def, track, rng);
   scene.add(env);
-  ({ group: objects, billboards } = buildAllTrackObjects(def, track, rng));
+  ({ group: objects, billboards, waterMeshes } = buildAllTrackObjects(def, track, rng));
   scene.add(objects);
   rebuildGuideLines();
 
@@ -423,10 +423,131 @@ function rebuild() {
 // keystroke) — regenerating the deformed ground grid and every barrier/kerb
 // instance from scratch made editing feel sluggish. Edits now just mark
 // dirty (cheap); the 3D scene only regenerates when Generate is pressed.
-function markDirty() {
+//
+// `label` groups a burst of rapid edits into ONE undo step — see recordEdit.
+// Pass a stable string for anything continuous (a marker drag, a slider);
+// one-shot edits can leave it off.
+function markDirty(label) {
   dirty = true;
   genBtn.classList.add("pending");
+  recordEdit(label ?? "edit");
 }
+
+// ---------------------------------------------------------------------
+// Undo / redo
+// ---------------------------------------------------------------------
+// The entire editable state is `def`, a plain JSON object, so history is
+// just a stack of serialized snapshots — no per-action inverse operations
+// to write or keep in sync as new edit types are added. Restoring is
+// loadDef(), which already does a full swap + rebuild for Apply/Load.
+//
+// markDirty() fires per pointermove during a drag and per keystroke in a
+// field, so snapshotting on every call would make one undo step per pixel.
+// Instead edits coalesce into a "burst": the first edit of a burst pushes
+// the pre-edit state, subsequent edits carrying the same label within
+// BURST_MS fold into it, and a different label (or the timer, or pointerup)
+// closes it. That makes one drag or one field edit exactly one undo step.
+//
+// snapshot() is only called at burst boundaries, never mid-burst, so a
+// drag doesn't re-serialize a large def every frame.
+const UNDO_LIMIT = 80;   // snapshots; a big def is ~1 MB of JSON, so cap the stack
+const BURST_MS = 450;    // quiet time that closes an edit burst
+
+let undoStack = [], redoStack = [];
+let baseline = null;     // serialized def as of the last checkpoint — what "undo now" returns to
+let burstLabel = null, burstPushed = false, burstTimer = 0;
+let restoring = false;   // guards markDirty() re-entry while a snapshot is being applied
+
+const snapshot = () => JSON.stringify(def);
+
+function closeBurst() {
+  if (burstTimer) { clearTimeout(burstTimer); burstTimer = 0; }
+  if (burstLabel === null) return;
+  burstLabel = null;
+  burstPushed = false;
+  baseline = snapshot();
+}
+
+function recordEdit(label) {
+  if (restoring || baseline === null) return;
+  if (burstLabel !== null && burstLabel !== label) closeBurst();
+  if (burstLabel === null) { burstLabel = label; burstPushed = false; }
+  // Not yet pushed for this burst: capture the pre-burst state. Checked on
+  // every call (not just the first) so a burst that opens with a no-op edit
+  // — a colour input re-firing with an unchanged value — still records the
+  // real change that follows it.
+  if (!burstPushed && baseline !== snapshot()) {
+    undoStack.push(baseline);
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    redoStack.length = 0;
+    burstPushed = true;
+    updateHistoryButtons();
+  }
+  clearTimeout(burstTimer);
+  burstTimer = setTimeout(closeBurst, BURST_MS);
+}
+
+// Called before a wholesale state swap (Apply / Load file / New track) so
+// those are undoable too — "New track" is otherwise an unrecoverable wipe.
+function historyCheckpoint() {
+  closeBurst();
+  undoStack.push(snapshot());
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  redoStack.length = 0;
+}
+
+function applySnapshot(json) {
+  // loadDef() resets the active spline to "main"; keep the one being
+  // worked on if it still exists in the restored def, so undoing an edit
+  // doesn't also throw you back to the main track.
+  const keepSpline = activeSplineId;
+  restoring = true;
+  try {
+    loadDef(JSON.parse(json));
+    if (keepSpline !== "main" && def.extraSplines?.some((s) => s.id === keepSpline)) setActiveSpline(keepSpline);
+  } finally {
+    restoring = false;
+  }
+  baseline = json; // loadDef set this already; keep them provably identical
+  updateHistoryButtons();
+}
+
+function undo() {
+  closeBurst();
+  if (!undoStack.length) { msg("Nothing to undo."); return; }
+  redoStack.push(snapshot());
+  applySnapshot(undoStack.pop());
+  msg(`Undo — ${undoStack.length} step${undoStack.length === 1 ? "" : "s"} left.`);
+}
+
+function redo() {
+  closeBurst();
+  if (!redoStack.length) { msg("Nothing to redo."); return; }
+  undoStack.push(snapshot());
+  applySnapshot(redoStack.pop());
+  msg(`Redo — ${redoStack.length} step${redoStack.length === 1 ? "" : "s"} left.`);
+}
+
+const undoBtn = document.getElementById("undoBtn");
+const redoBtn = document.getElementById("redoBtn");
+
+function updateHistoryButtons() {
+  undoBtn.disabled = undoStack.length === 0;
+  redoBtn.disabled = redoStack.length === 0;
+  undoBtn.title = `Undo (Ctrl+Z)${undoStack.length ? ` — ${undoStack.length} step${undoStack.length === 1 ? "" : "s"}` : ""}`;
+  redoBtn.title = `Redo (Ctrl+Shift+Z)${redoStack.length ? ` — ${redoStack.length} step${redoStack.length === 1 ? "" : "s"}` : ""}`;
+}
+
+undoBtn.addEventListener("click", undo);
+redoBtn.addEventListener("click", redo);
+
+window.addEventListener("keydown", (e) => {
+  // Inside a text field, let the browser's own text undo have the keystroke.
+  if (isTyping(e) || !(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); redo(); }
+});
 
 // ---------------------------------------------------------------------
 // Control point markers
@@ -585,7 +706,7 @@ renderer.domElement.addEventListener("pointermove", (e) => {
   pts[downIndex][2] = hit.z;
   markers[downIndex].position.set(hit.x, y, hit.z);
   if (downIndex === selected) syncInspectorFields();
-  markDirty();
+  markDirty(`drag-point:${activeSplineId}:${downIndex}`);
 });
 
 // Object tab's Select/Transform mode: which placed object (if any) is under
@@ -637,6 +758,7 @@ function textureAlphaAt(map, uv) {
 }
 
 window.addEventListener("pointerup", (e) => {
+  closeBurst(); // a drag/click just ended — the next edit starts a fresh undo step
   if (gizmoWasDragging) {
     // TransformControls' own pointerup (registered first, so it runs first)
     // already reset dragging by now — this flag is what tells us this
@@ -911,7 +1033,7 @@ function syncGizmoToData() {
     pt.rotZ = round2(_gzEuler.z);
     delete pt.rotation; // stale alias (placePoint reads rotY ?? rotation ?? 0) — avoid it masking the new rotY
   }
-  markDirty();
+  markDirty(`gizmo:${gizmoMode}:${selectedPointRef.splineId}:${selectedPointRef.index}`);
   updatePointRowFields(selectedPointRef.index);
 }
 
@@ -1353,22 +1475,22 @@ function wireMeta() {
   fName.addEventListener("input", () => (def.name = fName.value));
   fDesc.addEventListener("input", () => (def.desc = fDesc.value));
   fLaps.addEventListener("input", () => (def.laps = Number(fLaps.value) || 1));
-  fWidth.addEventListener("input", () => { def.width = Number(fWidth.value) || 4; markDirty(); });
+  fWidth.addEventListener("input", () => { def.width = Number(fWidth.value) || 4; markDirty("fWidth"); });
   fGold.addEventListener("input", () => (def.medalAvgSpeed.gold = Number(fGold.value) || 0));
   fSilver.addEventListener("input", () => (def.medalAvgSpeed.silver = Number(fSilver.value) || 0));
   fBronze.addEventListener("input", () => (def.medalAvgSpeed.bronze = Number(fBronze.value) || 0));
-  fSky.addEventListener("input", () => { def.theme.sky = fSky.value; markDirty(); });
-  fFog.addEventListener("input", () => { def.theme.fog = fFog.value; markDirty(); });
-  fGround.addEventListener("input", () => { def.theme.ground = fGround.value; markDirty(); });
-  fHill.addEventListener("input", () => { def.theme.hill = fHill.value; markDirty(); });
-  fSun.addEventListener("input", () => { def.theme.sun = fSun.value; updateSunFromTheme(); markDirty(); });
+  fSky.addEventListener("input", () => { def.theme.sky = fSky.value; markDirty("fSky"); });
+  fFog.addEventListener("input", () => { def.theme.fog = fFog.value; markDirty("fFog"); });
+  fGround.addEventListener("input", () => { def.theme.ground = fGround.value; markDirty("fGround"); });
+  fHill.addEventListener("input", () => { def.theme.hill = fHill.value; markDirty("fHill"); });
+  fSun.addEventListener("input", () => { def.theme.sun = fSun.value; updateSunFromTheme(); markDirty("fSun"); });
   // Azimuth/elevation reposition the light + its visible marker live, on
   // every drag tick — waiting for "Generate" would defeat the point of
   // being able to see the sun while aiming it.
-  const setSunAz = (v) => { def.theme.sunAzimuthDeg = Number(v); fSunAz.value = v; fSunAzRange.value = v; updateSunFromTheme(); markDirty(); };
+  const setSunAz = (v) => { def.theme.sunAzimuthDeg = Number(v); fSunAz.value = v; fSunAzRange.value = v; updateSunFromTheme(); markDirty("sunAz"); };
   fSunAz.addEventListener("input", () => setSunAz(fSunAz.value));
   fSunAzRange.addEventListener("input", () => setSunAz(fSunAzRange.value));
-  const setSunEl = (v) => { def.theme.sunElevationDeg = Number(v); fSunEl.value = v; fSunElRange.value = v; updateSunFromTheme(); markDirty(); };
+  const setSunEl = (v) => { def.theme.sunElevationDeg = Number(v); fSunEl.value = v; fSunElRange.value = v; updateSunFromTheme(); markDirty("sunEl"); };
   fSunEl.addEventListener("input", () => setSunEl(fSunEl.value));
   fSunElRange.addEventListener("input", () => setSunEl(fSunElRange.value));
   // Sun marker sits wherever azimuth/elevation put it, which is very often
@@ -1378,9 +1500,9 @@ function wireMeta() {
     controls.target.copy(sunVisual.position);
     controls.update();
   });
-  fTrees.addEventListener("input", () => { def.theme.props.trees = Number(fTrees.value) || 0; markDirty(); });
-  fRocks.addEventListener("input", () => { def.theme.props.rocks = Number(fRocks.value) || 0; markDirty(); });
-  fBillboards.addEventListener("input", () => { def.theme.props.billboards = Number(fBillboards.value) || 0; markDirty(); });
+  fTrees.addEventListener("input", () => { def.theme.props.trees = Number(fTrees.value) || 0; markDirty("fTrees"); });
+  fRocks.addEventListener("input", () => { def.theme.props.rocks = Number(fRocks.value) || 0; markDirty("fRocks"); });
+  fBillboards.addEventListener("input", () => { def.theme.props.billboards = Number(fBillboards.value) || 0; markDirty("fBillboards"); });
 
   document.getElementById("presetGrass").addEventListener("click", () => {
     Object.assign(def.theme, { sky: 0x87ceeb, fog: 0x9cc7de, ground: "#4c7a3f", hill: 0x50694a, sun: 0xfff4e0, terrain: "grass" });
@@ -1451,6 +1573,7 @@ tFile.addEventListener("change", () => {
       return;
     }
     tJson.value = JSON.stringify(parsed, null, 2); // keep Export/Copy/Apply in sync with what's now loaded
+    historyCheckpoint(); // a full swap is undoable too
     loadDef(normalizeDef(parsed));
     msg(`Loaded ${file.name} — resume editing.`);
     tFile.value = ""; // reset so picking the same filename again still fires 'change'
@@ -1471,11 +1594,13 @@ document.querySelector('[data-act="apply"]').addEventListener("click", () => {
     msg(err);
     return;
   }
+  historyCheckpoint(); // a full swap is undoable too
   loadDef(normalizeDef(parsed));
   msg("Loaded.");
 });
 document.querySelector('[data-act="reset"]').addEventListener("click", () => {
   if (!confirm("Discard the current track and start a new one?")) return;
+  historyCheckpoint(); // recoverable with Undo, unlike before
   loadDef(freshDef());
 });
 
@@ -1499,6 +1624,13 @@ function loadDef(newDef) {
   // yet; if the loaded JSON already had one, refresh explicitly here too.
   refreshBandList();
   refreshPointList();
+  // Whatever def is now IS the state undo returns to. Any in-flight burst
+  // belonged to the old def and must not survive the swap.
+  if (burstTimer) { clearTimeout(burstTimer); burstTimer = 0; }
+  burstLabel = null;
+  burstPushed = false;
+  baseline = snapshot();
+  updateHistoryButtons();
 }
 
 let lastTickTime = performance.now();
@@ -1509,6 +1641,7 @@ function tick() {
   lastTickTime = now;
   updateFlyCamera(dt);
   controls.update();
+  updateOceanTime(waterMeshes, now);
   // Same Y-axis-only billboarding as the race (main.js) — crowd sprites
   // face the free-orbiting editor camera so what you preview matches races.
   for (const b of billboards) {
@@ -1537,6 +1670,9 @@ async function init() {
   setObjectMode("place");
   setGizmoMode("translate");
   loadDef(loadDraft() ?? freshDef());
+  undoStack.length = 0; // boot state is the floor — nothing before it to undo to
+  redoStack.length = 0;
+  updateHistoryButtons();
 
   document.getElementById("loading").classList.add("hidden");
   document.getElementById("left").classList.remove("hidden");

@@ -13,12 +13,24 @@
 //
 // Checks:
 //   shape     required fields, types, medal ordering
-//   geometry  corner radius vs road width, grade, self-crossing /
-//             near-parallel sections (the track query is 2D — see
-//             spline.js query() — so same-height crossings break physics)
+//   drivable  grade vs. the grade the car can actually climb, and corner
+//             radii vs. the radius above which everything is flat out —
+//             both derived from CONFIG.physics, not from taste. This is the
+//             check that would have caught Trial Mountain, which shipped
+//             with 7% of its lap climbing steeper than the car can climb at
+//             all, and not one corner tight enough to make a player lift.
+//   geometry  corner radius vs road width, self-crossing / near-parallel
+//             sections (the track query is 2D — see spline.js query() — so
+//             same-height crossings break physics)
 //   objects   band/point types exist, ranges sane, splineTarmac `tex`
 //             names a real file in assets/textures/road/, cutout folders
 //             referenced by bands actually contain images
+//   scenery   depth layering: how many placement rules, how many distinct
+//             types, and what spread of distances sit in each zone out from
+//             the racing line (on-track / barrier line / behind barrier /
+//             mid / far). Catches the other half of the Trial Mountain
+//             failure — a bare horizon and a mid layer that was eight
+//             identical pine bands at one offset.
 //   ids       duplicate track ids across tracks.js + levels/
 // =====================================================================
 import fs from "node:fs";
@@ -38,6 +50,9 @@ const SHARED = path.join(ROOT, "..", "shared");
 // scope). Keep the static list in sync with trackObjects.js.
 const STATIC_TYPES = [
   "barrier", "apexKerb", "tireBarrier", "tree", "building", "pillar", "lampTokyo", "billboard", "crowd",
+  "rockOutcrop", "monkeyTree", "timberRail", "tunnelPortalMountain", "tunnelPortalExpressway",
+  "buildingOldTown", "sphinx", "marketStall",
+  "buildingRiviera", "casinoMonteCarlo", "yacht", "harbourCrane", "ocean",
   "splineBarrier", "splineApexKerb", "splineTarmac", "splineTunnel",
 ];
 const RIBBON_TYPES = new Set(["splineBarrier", "splineApexKerb", "splineTarmac", "splineTunnel"]);
@@ -79,15 +94,80 @@ function loadAll() {
 }
 
 class Report {
-  constructor(label) { this.label = label; this.errors = []; this.warns = []; }
+  constructor(label) { this.label = label; this.errors = []; this.warns = []; this.infos = []; }
   err(msg) { this.errors.push(msg); }
   warn(msg) { this.warns.push(msg); }
+  // Measurements that aren't pass/fail on their own but that a track author
+  // (human or agent) has to see to judge the layout — see the corner-rhythm
+  // block in checkGeometry. Always printed, never affects exit status.
+  info(msg) { this.infos.push(msg); }
   print() {
     const status = this.errors.length ? "FAIL" : this.warns.length ? "warn" : "ok";
     console.log(`[${status}] ${this.label}`);
     for (const e of this.errors) console.log(`   ERROR ${e}`);
     for (const w of this.warns) console.log(`   warn  ${w}`);
+    for (const i of this.infos) console.log(`   info  ${i}`);
   }
+}
+
+// ---------------------------------------------------------------------
+// The car this track has to be drivable BY, derived from CONFIG.physics so
+// retuning the game retunes these checks (same principle drive-test.js's
+// speed targets follow). All three numbers below are what separate a
+// circuit from an undrivable or boring one, and none of them are guessable
+// by eye from a control-point list:
+//
+//   vTop      flat-ground top speed. NOT CONFIG.physics.maxSpeed (a clamp
+//             the car never reaches) — the real ceiling is where drive
+//             force balances drag + rolling resistance.
+//   gradeMax  the grade at which net accel hits zero: the car physically
+//             cannot climb steeper, at any speed, ever. Momentum can carry
+//             it over a short spike; a sustained stretch is a dead stop.
+//   rFlatOut  corner radius whose grip-limited speed equals vTop. EVERY
+//             corner gentler than this is taken at full throttle without
+//             lifting — i.e. it is not a corner, it is a straight that
+//             happens to bend. A track built entirely from these is the
+//             "slow oval" failure mode however long or scenic it is.
+// ---------------------------------------------------------------------
+const P = CONFIG.physics;
+const A_DRIVE = P.engineAccel / P.mass;
+const CAR = (() => {
+  const vTop = Math.sqrt(Math.max(0, (A_DRIVE - P.rollingResist) / P.dragK));
+  const gradeMax = (A_DRIVE - P.rollingResist) / (9.81 * P.slopeGravity);
+  // lateral capacity rises with downforce, so solve v² = r·μ·(g + df·v²) for v
+  const vCorner = (radius) => {
+    const k = 1 - radius * P.mu * P.downforce;
+    return k <= 0 ? Infinity : Math.sqrt((radius * P.mu * 9.81) / k);
+  };
+  let lo = 0.5, hi = 1e4;
+  for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (vCorner(m) < vTop) lo = m; else hi = m; }
+  return { vTop, gradeMax, rFlatOut: (lo + hi) / 2, vCorner, latCap: (v) => P.mu * (9.81 + P.downforce * v * v) };
+})();
+
+// Speed the car can hold indefinitely on a constant grade (0 = can't climb).
+const sustainableOnGrade = (grade) => {
+  const x = (A_DRIVE - P.rollingResist - 9.81 * P.slopeGravity * grade) / P.dragK;
+  return x <= 0 ? 0 : Math.sqrt(x);
+};
+
+// Box-filter an arc-spaced per-sample series over `metres` of track. Raw
+// per-sample grade/curvature is a difference over one ~0.85 m step and is
+// noisy enough to trip any threshold on estimator error alone (the same
+// reason barriers.js and computeWallProfile smooth before using curvature) —
+// what matters for drivability is the grade the car spends real distance on.
+function smoothRing(arr, ds, metres, closed) {
+  const n = arr.length;
+  const m = Math.max(1, Math.round(metres / ds / 2));
+  const idx = closed
+    ? (i) => ((i % n) + n) % n
+    : (i) => Math.min(n - 1, Math.max(0, i));
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let sum = 0;
+    for (let k = -m; k <= m; k++) sum += arr[idx(i + k)];
+    out[i] = sum / (2 * m + 1);
+  }
+  return out;
 }
 
 function validPoint(p) {
@@ -99,11 +179,11 @@ function checkGeometry(r, controlPoints, width, { closed = true, name = "main" }
   const { samples, length } = spline;
   const halfW = width / 2;
 
-  let maxCurv = 0, maxGrade = 0;
-  for (const s of samples) {
-    maxCurv = Math.max(maxCurv, Math.abs(s.curv));
-    maxGrade = Math.max(maxGrade, Math.abs(s.t.y));
-  }
+  const N = samples.length;
+  const ds = length / N;
+
+  let maxCurv = 0;
+  for (const s of samples) maxCurv = Math.max(maxCurv, Math.abs(s.curv));
   const minRadius = 1 / Math.max(maxCurv, 1e-9);
   if (minRadius < halfW)
     // Ships in a built-in track (Canyon Sprint) — the game tolerates the
@@ -111,14 +191,90 @@ function checkGeometry(r, controlPoints, width, { closed = true, name = "main" }
     r.warn(`${name}: min corner radius ${minRadius.toFixed(1)} m < half road width ${halfW} m — inner road edge folds at the pinch, check visually`);
   else if (minRadius < width)
     r.warn(`${name}: min corner radius ${minRadius.toFixed(1)} m < road width ${width} m — very tight hairpin, check the ribbon`);
-  if (maxGrade > 0.55) r.err(`${name}: max grade ${(maxGrade * 100).toFixed(0)}% — near-vertical road`);
-  else if (maxGrade > 0.28) r.warn(`${name}: max grade ${(maxGrade * 100).toFixed(0)}% — steeper than a real circuit ever gets`);
+
+  // ---- grade vs. what the car can actually climb ----
+  // The old check gated on a "real circuits aren't this steep" aesthetic
+  // threshold (warn 28%, error 55%) and let Trial Mountain ship with 13% of
+  // its lap above the car's hard no-climb ceiling: a warning nobody acted on.
+  // Gate on the physics instead, measured over a distance the car has to
+  // actually cover rather than a one-sample spike.
+  const grade = smoothRing(samples.map((s) => s.t.y), ds, 20, closed);
+  let maxClimb = 0, maxDrop = 0, overCeiling = 0, overHalf = 0;
+  for (let i = 0; i < N; i++) {
+    maxClimb = Math.max(maxClimb, grade[i]);
+    maxDrop = Math.min(maxDrop, grade[i]);
+    if (grade[i] > CAR.gradeMax) overCeiling++;
+    if (Math.abs(grade[i]) > CAR.gradeMax * 0.5) overHalf++;
+  }
+  const pctCeiling = (overCeiling / N) * 100;
+  const ceilPct = (CAR.gradeMax * 100).toFixed(0);
+  if (overCeiling > 0)
+    r.err(
+      `${name}: ${pctCeiling.toFixed(0)}% of the lap climbs steeper than the car can climb at all ` +
+      `(peak ${(maxClimb * 100).toFixed(0)}% sustained over 20 m; hard ceiling ${ceilPct}%) — the car stops dead there`
+    );
+  else if (maxClimb > CAR.gradeMax * 0.55)
+    r.warn(
+      `${name}: peak sustained climb ${(maxClimb * 100).toFixed(0)}% holds the car to ` +
+      `${sustainableOnGrade(maxClimb).toFixed(1)} m/s (${((sustainableOnGrade(maxClimb) / CAR.vTop) * 100).toFixed(0)}% of top speed) — reads as a crawl`
+    );
+  if (overHalf / N > 0.15 && overCeiling === 0)
+    r.warn(`${name}: ${((overHalf / N) * 100).toFixed(0)}% of the lap is steeper than ${(CAR.gradeMax * 50).toFixed(0)}% — sustained gradient dominates the lap over cornering`);
+  if (maxDrop < -CAR.gradeMax)
+    r.warn(`${name}: peak descent ${(maxDrop * 100).toFixed(0)}% exceeds ${ceilPct}% — gravity outruns the drag limit, the car arrives at the next corner far over its cornering speed`);
+
+  // ---- corner rhythm: is there anything to drive here? ----
+  // Only meaningful for the racing line itself; extra splines are scenery.
+  if (name === "main" && closed) {
+    const curvS = smoothRing(samples.map((s) => s.curv), ds, 4, closed);
+    const radii = Array.from(curvS, (c) => 1 / Math.max(1e-6, Math.abs(c)));
+    // Cornering-limited speed, then a backward braking sweep — the same
+    // construction track.js uses to build its AI target-speed table, so this
+    // measures the line the game itself plans, not a theoretical ideal.
+    const vt = radii.map((rad) => Math.min(CAR.vTop, CAR.vCorner(rad)));
+    for (let pass = 0; pass < 3; pass++)
+      for (let i = N - 1; i >= 0; i--) {
+        const j = (i + 1) % N;
+        vt[i] = Math.min(vt[i], Math.sqrt(vt[j] * vt[j] + 2 * (P.brakeDecel / P.mass) * ds));
+      }
+    // Fraction of the car's lateral grip in use at that planned speed: this,
+    // not corner count or lap length, is what "the track is fun to drive"
+    // reduces to — the player wants to be near the limit, not coasting.
+    let working = 0, limit = 0, idle = 0, corners = 0, inCorner = false;
+    for (let i = 0; i < N; i++) {
+      const u = (vt[i] * vt[i]) / radii[i] / CAR.latCap(vt[i]);
+      if (u >= 0.5) working++;
+      if (u >= 0.7) limit++;
+      if (u < 0.25) idle++;
+      const c = u >= 0.4;
+      if (c && !inCorner) corners++;
+      inCorner = c;
+    }
+    const km = length / 1000;
+    r.info(
+      `${name}: corner rhythm — ${((working / N) * 100).toFixed(0)}% of the lap at >=50% lateral grip, ` +
+      `${((limit / N) * 100).toFixed(0)}% at >=70%, ${((idle / N) * 100).toFixed(0)}% coasting <25%; ` +
+      `${(corners / km).toFixed(1)} corners/km; tightest radius ${minRadius.toFixed(0)} m ` +
+      `(flat-out above ${CAR.rFlatOut.toFixed(0)} m)`
+    );
+    if (minRadius > CAR.rFlatOut)
+      r.err(
+        `${name}: no corner on the lap is tighter than ${CAR.rFlatOut.toFixed(0)} m radius (tightest is ${minRadius.toFixed(0)} m) — ` +
+        `the whole track is flat out, the player never lifts or turns near the limit`
+      );
+    else if (working / N < 0.10)
+      r.warn(
+        `${name}: only ${((working / N) * 100).toFixed(0)}% of the lap loads the tyres past half grip ` +
+        `(Circuito di Roma 20%, Shuto Loop 21%) — mostly straights and gentle sweepers`
+      );
+    if (corners / km < 8)
+      r.warn(`${name}: ${(corners / km).toFixed(1)} corners/km (Roma 24, Shuto 21) — long featureless stretches between events`);
+  }
 
   if (closed) {
     // Self-proximity scan: pairs of samples far apart along the lap but close
     // in XZ. The track query (spline.js) is 2D, so a same-height crossing or
     // squeeze breaks wall collision / checkpoint attribution, not just looks.
-    const N = samples.length;
     const wallDist = halfW + CONFIG.track.wallMargin;
     let worst = null;
     for (let i = 0; i < N; i++) {
@@ -143,6 +299,99 @@ function checkGeometry(r, controlPoints, width, { closed = true, name = "main" }
     }
   }
   return spline;
+}
+
+// ---------------------------------------------------------------------
+// Scenery depth layers. A track can pass every geometric check and still
+// look flat and cheap, and the reason is almost always the same: everything
+// is placed in one or two distance bands, one object type per band, at a
+// single offset with no size variation — so the eye reads a corridor of
+// repeated identical props with bare sky behind it. Trial Mountain's mid
+// layer was eight cutoutPine bands ALL at exactly 17 m and nothing at all
+// beyond; Circuito di Roma spreads 9 distinct types over 7-12 m behind the
+// barrier alone, and carries a horizon out to 79 m.
+//
+// Distance is measured from the RACING LINE, not from whichever spline a
+// band hangs off: an extraSpline's own `offset` is relative to that spline,
+// which may itself sit 40 m away, so bucketing on `offset` alone silently
+// files far-layer scenery as trackside.
+// ---------------------------------------------------------------------
+const ZONES = ["on-track", "barrier line", "behind barrier", "mid", "far"];
+
+function checkSceneryLayers(r, def, track) {
+  const halfW = def.width / 2;
+  const wall = halfW + CONFIG.track.wallMargin;
+  const zoneOf = (off) =>
+    off <= halfW + 0.5 ? ZONES[0]
+    : off <= wall + 1.5 ? ZONES[1]
+    : off <= wall + 8 ? ZONES[2]
+    : off <= wall + 20 ? ZONES[3] : ZONES[4];
+
+  const buckets = new Map(ZONES.map((z) => [z, []]));
+  const add = (type, off, o) => {
+    if (!type) return;
+    const scaled = [o.scaleX, o.scaleY, o.scaleZ].some((v) => v != null && v !== 1);
+    buckets.get(zoneOf(off)).push({ type, off, scaled, jitter: !!o.jitter });
+  };
+  for (const b of def.trackObjects?.bands ?? []) add(b.type, Math.abs(b.offset ?? wall), b);
+  for (const p of def.trackObjects?.points ?? []) add(p.type, Math.abs(p.offset ?? wall), p);
+
+  // Closest approach of each extra spline to the racing line, so its bands
+  // land in the zone the player actually sees them in.
+  for (const ex of def.extraSplines ?? []) {
+    if (!Array.isArray(ex.controlPoints) || ex.controlPoints.length < 2) continue;
+    if (!ex.controlPoints.every(validPoint)) continue;
+    const xs = buildSpline(ex.controlPoints, !!ex.closed, 120);
+    let base = Infinity;
+    for (const s of xs.samples)
+      for (const m of track.samples) {
+        const dx = s.p.x - m.p.x, dz = s.p.z - m.p.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < base) base = d2;
+      }
+    base = Math.sqrt(base);
+    for (const b of ex.trackObjects?.bands ?? []) add(b.type, base + Math.abs(b.offset ?? 0), b);
+    for (const p of ex.trackObjects?.points ?? []) add(p.type, base + Math.abs(p.offset ?? 0), p);
+  }
+
+  const total = [...buckets.values()].reduce((n, v) => n + v.length, 0);
+  const km = track.length / 1000;
+  r.info(
+    `scenery layers (rules | distinct types | metres spanned): ` +
+    ZONES.map((z) => {
+      const v = buckets.get(z);
+      if (!v.length) return `${z} EMPTY`;
+      const lo = Math.min(...v.map((x) => x.off)), hi = Math.max(...v.map((x) => x.off));
+      return `${z} ${v.length}|${new Set(v.map((x) => x.type)).size}t|${lo.toFixed(0)}-${hi.toFixed(0)}m`;
+    }).join("  ") + `  — ${(total / km).toFixed(0)} rules/km`
+  );
+
+  if (!buckets.get("far").length)
+    r.warn(`scenery: no FAR layer (nothing beyond ${(wall + 20).toFixed(0)} m from the racing line) — the horizon is bare sky. Place static:true backdrop cutouts on extraSplines set well back`);
+  if (buckets.get("behind barrier").length + buckets.get("mid").length < 4)
+    r.warn(`scenery: almost nothing between the barrier and the horizon — the track reads as a corridor with a painted backdrop. Legitimate for a walled-in setting (Shuto Loop is an elevated expressway); say so in the hand-off if you keep it`);
+  for (const z of ZONES) {
+    const v = buckets.get(z);
+    if (v.length < 3) continue;
+    const types = new Set(v.map((x) => x.type));
+    if (types.size < 2)
+      r.warn(`scenery: the ${z} layer is ${v.length}x "${[...types][0]}" and nothing else — one repeated object reads as wallpaper; mix types`);
+    // Only meaningful outside the structural zones: the road surface and the
+    // barrier line ARE at fixed distances by definition (a guardrail runs at
+    // one offset — that's what a guardrail is). Past the barrier, everything
+    // sharing one offset is the "wall of identical pines" failure.
+    if (z !== "on-track" && z !== "barrier line") {
+      const lo = Math.min(...v.map((x) => x.off)), hi = Math.max(...v.map((x) => x.off));
+      if (hi - lo < 1.5)
+        r.warn(`scenery: every ${z} rule sits at ${lo.toFixed(1)} m — a flat wall of props at one distance; stagger the offsets across the zone`);
+    }
+    if (!v.some((x) => x.scaled) && !v.some((x) => x.jitter) && z !== "on-track")
+      r.warn(`scenery: no scale or jitter variation anywhere in the ${z} layer — identical props on a perfect grid`);
+  }
+  // 30 is the floor, not the aim: Shuto Loop sits at 34 and is deliberately
+  // repetitive, so anything under it is thin by any standard. Aim for 40+.
+  if (total / km < 30)
+    r.warn(`scenery: ${(total / km).toFixed(0)} placement rules/km — thin dressing (Roma 146, Shuto 34, aim for 40+). Bands are cheap; this counts authored variety, not object count`);
 }
 
 function checkTrackObjects(r, trackObjects, where, splineLength) {
@@ -213,8 +462,24 @@ function validate(def, source, allIds) {
   if (def.medalAvgSpeed) {
     const lapAtGold = track.length / def.medalAvgSpeed.gold;
     if (lapAtGold < 15) r.warn(`gold medal pace = ${lapAtGold.toFixed(0)} s/lap — suspiciously short lap or high target`);
+    // A medal target above the car's own drag-limited top speed can't be met
+    // even flat out for the entire race with zero cornering. Checked here
+    // rather than up in the shape block so it can't early-return past the
+    // geometry checks. drive-test.js reports the pace actually achievable.
+    if (def.medalAvgSpeed.gold > CAR.vTop)
+      r.err(`medalAvgSpeed.gold ${def.medalAvgSpeed.gold} m/s exceeds the car's flat-ground top speed ${CAR.vTop.toFixed(1)} m/s — unwinnable at any skill`);
   }
+  // theme.ground is the ONE theme color that must be a CSS STRING: it goes
+  // straight to canvas ctx.fillStyle in grassTexture/desertTexture
+  // (shared/src/placeholders.js), which silently ignores a non-color value and
+  // leaves the terrain pure BLACK. Every other theme color goes through
+  // THREE.Color and takes a 0xRRGGBB number happily, so this is very easy to
+  // get wrong — Trial Mountain shipped with a black world exactly this way,
+  // and the schema used to document `ground` as a number.
+  if (def.theme?.ground !== undefined && typeof def.theme.ground !== "string")
+    r.err(`theme.ground must be a CSS color string (e.g. "#4c7a3f"), got ${typeof def.theme.ground} ${def.theme.ground} — a number is ignored by ctx.fillStyle and renders the ground black`);
   checkTrackObjects(r, def.trackObjects, "main", track.length);
+  checkSceneryLayers(r, def, track);
 
   const exIds = new Set();
   for (const [i, ex] of (def.extraSplines ?? []).entries()) {
