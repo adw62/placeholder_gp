@@ -18,10 +18,11 @@
 // editor/tuningLab.html, same as any other profile — Red #11 and White #7
 // respectively, generalized).
 //
-// Profiles are auto-discovered from carProfiles/ the same directory-listing
-// trick game/src/levels.js uses for track levels (Python's http.server
-// returns one automatically) — drop an exported tune in, it's live next
-// reload. Each file needs a `carId` (which car — or which drivetrain
+// Profiles are auto-discovered from carProfiles/ the same manifest.json
+// trick game/src/levels.js uses for track levels (works on any static host,
+// GitHub Pages included) — drop an exported tune in, regenerate the
+// manifest (`node game/tools/build-manifests.mjs`), it's live next
+// reload/deploy. Each file needs a `carId` (which car — or which drivetrain
 // default — it tunes) and `params` (path -> value, the exact shape
 // TuningLab.toJSON() writes). If more than one file targets the same
 // carId, the last one discovered wins — no in-game picker, one active
@@ -87,12 +88,11 @@ export function applyCarPhysics(carId, profiles) {
 
 export async function discoverProfileUrls(folderUrl) {
   try {
-    const res = await fetch(folderUrl);
-    if (!res.ok) return [];
-    const html = await res.text();
-    const hrefs = [...html.matchAll(/href="([^"]+\.json)"/gi)].map((m) => m[1]);
     const base = new URL(folderUrl, location.href);
-    return [...new Set(hrefs)].map((h) => new URL(h, base).href);
+    const res = await fetch(new URL("manifest.json", base));
+    if (!res.ok) return [];
+    const files = await res.json();
+    return [...new Set(files)].map((f) => new URL(f, base).href);
   } catch {
     return [];
   }

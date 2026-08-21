@@ -21,7 +21,7 @@ import { Effects } from "./effects.js";
 import { GameAudio } from "./audio.js";
 import { HUD, fmtTime } from "./hud.js";
 import { applyCarPhysics, loadCarProfiles } from "./carProfiles.js";
-import { preloadAssets, buildPlayerCar, WHEEL, updateCrowdBillboard, ASSETS, randomCarId } from "../../shared/src/placeholders.js";
+import { preloadAssets, buildPlayerCar, WHEEL, updateCrowdBillboard, ASSETS, randomCarId, playerCarModels } from "../../shared/src/placeholders.js";
 import { mergeStaticGroup } from "./batching.js";
 import { makeDamageable, damageCarAt } from "./damage.js";
 import { CollisionDebug } from "./collisionDebug.js";
@@ -243,7 +243,8 @@ const saveBestLap = (id, ms) => {
 };
 const loadSelectedCarId = () => {
   const saved = localStorage.getItem("pgp-car");
-  return ASSETS.carModels.some((c) => c.id === saved) ? saved : ASSETS.carModels[0].id;
+  const pickable = playerCarModels();
+  return pickable.some((c) => c.id === saved) ? saved : pickable[0].id;
 };
 
 // ---------------------------------------------------------------------
@@ -360,7 +361,7 @@ function showMenu() {
   playerRig.group.visible = false;
   scene.background = new THREE.Color(0x0b0e14);
   scene.fog = null;
-  hud.showCarPicker(ASSETS.carModels, selectedCarId, (car) => {
+  hud.showCarPicker(playerCarModels(), selectedCarId, (car) => {
     audio.init();
     audio.click();
     setPlayerCar(car.id);

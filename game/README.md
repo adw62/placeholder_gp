@@ -15,9 +15,7 @@ placeholder designed to be swapped for real art without touching game code
 
 ## Run
 
-Needs an HTTP server — ES modules + GLTF loading don't work over `file://`,
-and several features (levels/, crowd kits, ribbon/cutout texture folders)
-rely on the dev server returning a directory listing, which Python's does.
+Needs an HTTP server — ES modules + GLTF loading don't work over `file://`.
 `src/main.js`'s imports reach two levels up (`../../shared/src/...`), which
 a browser resolves to `<server root>/shared/src/...` — so the server root
 must be **this repo's top level**, not `game/` itself, or those imports
@@ -27,6 +25,23 @@ must be **this repo's top level**, not `game/` itself, or those imports
 cd .. # repo root, if you're in game/
 python3 -m http.server 8000
 # open http://localhost:8000/game/index.html
+```
+
+Any static file server works, including a plain `git push` to a GitHub
+Pages branch — no server-side code required, and no directory-listing
+support needed either (see next).
+
+### Adding levels/car profiles/crowd kits/textures
+
+Several features (levels/, carProfiles/, crowd kits, ribbon/cutout texture
+folders) auto-discover the files dropped into their folder — but a static
+host has no way to list a folder's contents on its own, so each such folder
+ships a `manifest.json` (a plain file listing that folder's filenames) that
+the game fetches instead. After adding, removing, or renaming a file in any
+of those folders, regenerate the manifests before deploying:
+
+```bash
+node game/tools/build-manifests.mjs
 ```
 
 ## Controls

@@ -1,13 +1,12 @@
 // =====================================================================
-// User-generated levels — auto-discovered from levels/ at boot. Same
-// directory-listing trick already used for crowd kits (discoverCrowdKitUrls
-// in crowd.js) and texture-variety folders (placeholders.js): the dev
-// server's own folder listing (Python's http.server returns one
-// automatically) is parsed for matching links, so dropping a file in is
-// enough — no manifest to edit, no code change, just a page reload. Same
-// portability caveat as those: most static hosts don't return a directory
-// listing, so this is a local-dev convenience, not something to rely on in
-// production hosting.
+// User-generated levels — auto-discovered from levels/ at boot via
+// levels/manifest.json (same manifest trick used for crowd kits —
+// discoverCrowdKitUrls in crowd.js — and texture-variety folders —
+// placeholders.js): a plain JSON file listing the folder's filenames, so
+// this works on any static host (GitHub Pages included), unlike parsing a
+// directory-listing page (only Python's http.server returns one of those).
+// Drop a file in, then regenerate the manifest — `node
+// game/tools/build-manifests.mjs` — and it's live next reload/deploy.
 //
 // Each file is a whole track-definition JSON — the exact shape TRACKS
 // entries in tracks.js have, and exactly what the editor's Export/Copy/
@@ -16,12 +15,11 @@
 
 export async function discoverLevelUrls(folderUrl) {
   try {
-    const res = await fetch(folderUrl);
-    if (!res.ok) return [];
-    const html = await res.text();
-    const hrefs = [...html.matchAll(/href="([^"]+\.json)"/gi)].map((m) => m[1]);
     const base = new URL(folderUrl, location.href);
-    return [...new Set(hrefs)].map((h) => new URL(h, base).href);
+    const res = await fetch(new URL("manifest.json", base));
+    if (!res.ok) return [];
+    const files = await res.json();
+    return [...new Set(files)].map((f) => new URL(f, base).href);
   } catch {
     return [];
   }
