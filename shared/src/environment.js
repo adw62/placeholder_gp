@@ -23,13 +23,32 @@ const GROUND_FLUSH_MARGIN = 1.5; // beyond the road edge, still held flush befor
 const GROUND_DROP = 0.08; // sit slightly below the road ribbon, never through it
 const HEIGHT_SAMPLE_STRIDE = 2;
 
+// Terrain pits carved under any "Ocean" point on the MAIN track (see
+// computeWaterPits below) so a placed pond/oasis reads as a real basin
+// instead of a water plane floating flat on top of the desert. Depth/bank
+// tuning lives here as flat constants rather than per-point JSON fields —
+// an Ocean point already carries everything needed to place and size the
+// dip (s/side/offset, rotY, scaleX/scaleZ), so there's nothing more for a
+// track author to tune.
+const POND_DEPTH = 1.1;
+const POND_FLOOR = 0.85; // fraction of the plane's own half-extent that's held at full depth
+const POND_BANK = 1.6; // fraction of the plane's half-extent where the dip fades back to 0 — the visible sandy rim beyond the water's edge
+const POND_ROAD_MARGIN = 3; // metres past the road's own flush zone where pit strength ramps 0 -> 1 — deliberately narrow (just the shoulder), NOT the wide 60m terrain-blend falloff, or a pond placed at a perfectly reasonable offset gets muted by proximity to track a world away on the same loop (see makeGroundSampler)
+
 // Same "nearest track sample, blend to flat past FALLOFF" rule the ground
 // mesh itself is built from, factored out so anything else that needs to
 // know "how high is the ground at this world point" (buildOcean's shoreline
 // bake, see trackObjects.js) reads the IDENTICAL height a ground vertex
 // would get — no separate approximation that could drift from what's
-// actually rendered.
-export function makeGroundSampler(track) {
+// actually rendered. `pits` (see computeWaterPits) are optional local
+// depressions layered on top; each is guarded by `roadGuard`, ramping 0->1
+// over just POND_ROAD_MARGIN metres past the road's own flush zone — a pond
+// can never carve into the road or its shoulder no matter where it's
+// placed. This is intentionally NOT the same as the broad `t` used for
+// track-elevation blending above (GROUND_FALLOFF=60m): reusing `t` here
+// muted ponds within ~60m of ANY point on the track loop, which most
+// sensible off-track placements are.
+export function makeGroundSampler(track, pits = []) {
   const heightSamples = [];
   for (let i = 0; i < track.samples.length; i += HEIGHT_SAMPLE_STRIDE) heightSamples.push(track.samples[i]);
   const flushDist = (track.wallDist ?? 0) + GROUND_FLUSH_MARGIN;
@@ -42,14 +61,65 @@ export function makeGroundSampler(track) {
     }
     const d = Math.sqrt(bestD2);
     const t = d <= flushDist ? 1 : THREE.MathUtils.clamp(1 - (d - flushDist) / GROUND_FALLOFF, 0, 1);
-    return bestY * t - GROUND_DROP * t;
+    let y = bestY * t - GROUND_DROP * t;
+    if (pits.length) {
+      const roadGuard = THREE.MathUtils.smoothstep(d, flushDist, flushDist + POND_ROAD_MARGIN);
+      for (const pit of pits) {
+        const dx = wx - pit.cx, dz = wz - pit.cz;
+        const c = Math.cos(-pit.rotY), s2 = Math.sin(-pit.rotY);
+        const lx = dx * c - dz * s2, lz = dx * s2 + dz * c;
+        const r = Math.sqrt((lx / pit.halfX) ** 2 + (lz / pit.halfZ) ** 2);
+        const basin = 1 - THREE.MathUtils.smoothstep(r, POND_FLOOR, POND_BANK);
+        if (basin > 0) y -= POND_DEPTH * basin * roadGuard;
+      }
+    }
+    return y;
   };
 }
 
-function buildGroundGeometry(track, center) {
+// Every "Ocean" point placed directly on the main track's own
+// trackObjects.points that explicitly opts in with `pit: true`, reduced to
+// a world-space elliptical footprint for makeGroundSampler's pit carving
+// above. Deliberately main-track-only (extraSplines use a different spline
+// this function has no notion of — see buildTrackObjects in trackObjects.js,
+// which only calls this for splineId === "main") and Ocean-only (no generic
+// "dig a hole here" JSON primitive; reuse what the water point already
+// specifies rather than inventing a second way to say "here, this big,
+// facing this way").
+//
+// `pit: true` is REQUIRED, not automatic for every Ocean point — Monaco's
+// two Ocean points are the open sea (half-extents up to ~95x244m, scaled
+// for a harbour backdrop, not a pond), and carving a basin under those
+// swallowed a huge swath of the map in an unintended crater the moment this
+// depression system shipped as an unconditional default. A small pond/
+// oasis feature (see Giza's) wants a basin; a sea horizon backdrop
+// emphatically does not — same OBJECT_TYPES entry, two different physical
+// things, so the choice has to be explicit per point.
+const _pitPos = new THREE.Vector3(), _pitTan = new THREE.Vector3(), _pitSide = new THREE.Vector3();
+export function computeWaterPits(def, track) {
+  const pits = [];
+  for (const pt of def.trackObjects?.points ?? []) {
+    if (pt.type !== "ocean" || pt.pit !== true) continue;
+    const sign = pt.side === "right" ? -1 : 1;
+    const offset = pt.offset ?? track.wallDist ?? 0;
+    track.posAt(pt.s ?? 0, offset * sign, _pitPos, _pitTan, _pitSide);
+    const baseYaw = Math.atan2(_pitTan.x, _pitTan.z);
+    pits.push({
+      cx: _pitPos.x,
+      cz: _pitPos.z,
+      rotY: baseYaw + (pt.rotY ?? pt.rotation ?? 0),
+      // buildOcean's base plane is 60x60 (placeholders.js) — half-extent 30 per axis, scaled per-instance same as the mesh itself.
+      halfX: 30 * (pt.scaleX ?? 1),
+      halfZ: 30 * (pt.scaleZ ?? 1),
+    });
+  }
+  return pits;
+}
+
+function buildGroundGeometry(track, center, pits) {
   const geo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, GROUND_SEGS, GROUND_SEGS);
   const pos = geo.attributes.position;
-  const sample = makeGroundSampler(track);
+  const sample = makeGroundSampler(track, pits);
   for (let i = 0; i < pos.count; i++) {
     // Plane is rotated -90deg about X to lie flat: local z -> world height, local (x,y) -> world (x,z).
     const wx = pos.getX(i) + center.x, wz = -pos.getY(i) + center.z;
@@ -256,11 +326,11 @@ export function buildEnvironment(def, track, rng) {
   for (const s of track.samples) box.expandByPoint(s.p);
   const center = box.getCenter(new THREE.Vector3());
 
-  // --- ground (follows nearby track elevation) ---
+  // --- ground (follows nearby track elevation, dips under any Ocean point) ---
   const gTex = theme.terrain === "desert" ? desertTexture(theme.ground) : grassTexture(theme.ground);
   gTex.repeat.set(90, 90);
   const ground = new THREE.Mesh(
-    buildGroundGeometry(track, center),
+    buildGroundGeometry(track, center, computeWaterPits(def, track)),
     new THREE.MeshStandardMaterial({ map: gTex, roughness: 1 })
   );
   ground.rotation.x = -Math.PI / 2;

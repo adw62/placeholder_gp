@@ -21,9 +21,9 @@ export const CONFIG = {
     cgHeight: 0.3,     // BASE height (m) — see carScale. Higher = stronger weight transfer under brake/throttle
 
     // ---- engine / brakes ----
-    maxSpeed: 38,      // m/s, top speed on tarmac
+    maxSpeed: 45,      // m/s, top speed on tarmac — raised for more arcade pace/sense of speed
     maxReverse: 7,
-    engineAccel: 8,    // engine force / unit mass; effective accel = this / mass
+    engineAccel: 9.5,  // engine force / unit mass; effective accel = this / mass — quicker off the line
     brakeDecel: 6,
     reverseAccel: 4,
     brakeBias: 0.65,   // fraction of brake force on the front axle
@@ -46,19 +46,23 @@ export const CONFIG = {
     // Max wheel angle is speed-dependent: full lock when parked, a small
     // precise angle at top speed, blended by steerShape.
     maxSteer: 0.33,         // rad, wheel angle at standstill
-    maxSteerHigh: 0.09,     // rad, wheel angle at top speed (countersteer authority)
+    maxSteerHigh: 0.11,     // rad, wheel angle at top speed (countersteer authority) — raised a
+                              // touch so opposite lock has enough bite to actually stop the yaw
+                              // once you're sideways at speed, not just trim it
     steerShape: 1.15,       // <1 = angle drops off early, >1 = holds until fast
-    steerSpeed: 1.2,        // rad/s toward target
+    steerSpeed: 1.6,        // rad/s toward target — raised from 1.2 so a countersteer input
+                              // reaches the wheels fast enough to catch a slide before it snaps
     steerReturnSpeed: 3.5,  // rad/s back to center
     maxYawRate: 3.5,        // safety cap only — the tire model self-limits
 
     // ---- assists & aero: the GT1/2 "arcade sim" layer (see physics.js) ----
-    steerAssist: 0.3,        // 0..1 grip-optimal steering limiter: lowered from 0.5 so full-lock
-                              // steering can actually push the front past its own peak slip angle —
-                              // at 0.5 the assist kept the front glued near-optimal, so only the
-                              // rear ever broke away (oversteer, not a 4-wheel slide)
-    stabilityAssist: 0.25,   // 0..1 fills rear post-peak falloff: raised from 0.1 so a slide catches
-                              // well before it snaps into an unrecoverable spin
+    steerAssist: 0.36,       // 0..1 grip-optimal steering limiter: raised a notch from 0.3 for an
+                              // easier-to-place front end — still well short of 0.5 (which glued the
+                              // front near-optimal and pushed all the breakaway onto the rear)
+    stabilityAssist: 0.55,   // 0..1 fills rear post-peak falloff: raised again (was 0.4, before that
+                              // 0.25) so a slide gathers itself hard and is easy to catch on the
+                              // countersteer — big slides still start (yaw momentum can exceed
+                              // capacity), they just stop reading as a coin-flip into a spin
     downforce: 0.02,        // extra axle load = downforce·v² (per-mass units); plants the car at speed
     aeroBalance: 0.5,       // fraction of downforce on the front axle
 
@@ -73,9 +77,9 @@ export const CONFIG = {
     // out into a hard plow — both axles now fall off the same forgiving way,
     // which is what reads as a controllable 4-wheel slide instead of
     // understeer-then-spin.
-    mu: 0.78,                        // peak friction (lateral limit ≈ μ·g ≈ 7.7 m/s²) — lowered a
-                                      // notch so the grip envelope is easier to exceed at racing
-                                      // speeds, inviting the slide sooner on both axles
+    mu: 0.86,                        // peak friction (lateral limit ≈ μ·g ≈ 8.4 m/s²) — raised from
+                                      // 0.78 so more corners are flat-out or lift-only: the arcade
+                                      // read is "carry speed and catch it", not "brake for every apex"
     tireFront: { B: 11, C: 1.3 },    // peak ≈ 9.0°, far tail keeps 89% grip (was 71% at C 1.5)
     tireRear:  { B: 22, C: 1.25 },   // peak ≈ 8.1°, far tail keeps 92% grip — C is THE slide-feedback knob
     lowSpeedGripBoost: 0.1, // extra μ at standstill (tires bite when slow)
@@ -106,6 +110,48 @@ export const CONFIG = {
   },
 
   drift: { minSlip: 0.1, minSpeed: 1.5, scoreRate: 12 },
+
+  // Nitro-style arcade boost (main.js/physics.js/hud.js): a meter that fills
+  // itself from driving expressively (drifting, lighting up the tires) and
+  // drains while held (the boost key) — no pickups, purely a reward loop
+  // layered on the existing drift/wheelspin signals. Applied as extra drive
+  // force + a raised top-speed ceiling inside CarPhysics.update (input.boost),
+  // never by mutating CONFIG.physics itself — that's shared by every AI car's
+  // own CarPhysics instance. AI opponents (game/src/ai.js) run their own
+  // meter through these same constants; CONFIG.ai.boostAI holds their
+  // separate decision-to-spend tuning.
+  boost: {
+    max: 100,             // meter units
+    startAmount: 35,      // start each race with a partial tank — one short burst is available immediately
+    fillDriftRate: 24,     // meter/s while actively drifting on the road
+    fillBurnoutRate: 16,   // meter/s while wheelspinning hard (rewards launches/powerslides too)
+    drainRate: 55,         // meter/s while the boost key is held
+    minToStart: 8,         // needs at least this much queued so a near-empty tank can't sputter for 1 frame
+    forceAccel: 5,          // extra engine-force-equivalent (per unit mass) while boosting — a firm
+                              // shove, not a rocket (was 10)
+    topSpeedBonus: 4,       // extra m/s ceiling while boosting, on top of physics.maxSpeed (was 10)
+    fovKick: 3,              // extra camera fov while boosting (was 9) — a light widen, not a lurch
+  },
+
+  // Impact/speed "juice" — screen-space feedback that isn't part of the sim.
+  juice: {
+    hitStop: {
+      threshold: 6,     // impact speed (m/s) that qualifies as a "big" hit — kerb taps stay silent
+      duration: 0.09,   // seconds the sim runs in slow motion after a big hit
+      timeScale: 0.12,  // how much it slows (this fraction of real speed)
+      fovKick: 16,       // camera fov punch on trigger, decays away below
+      fovKickDecay: 7,   // 1/s exponential decay rate of that punch
+    },
+    // Afterimage-style motion blur (main.js's EffectComposer/AfterimagePass),
+    // replacing the old radial speed-line overlay — same speed-fraction input,
+    // a subtler read. `damp` is the pass's own per-frame retention (0 = no
+    // blur, closer to 1 = long smeary trails); kept low on purpose ("light").
+    motionBlur: {
+      startFrac: 0.45,  // fraction of maxSpeed where blur starts fading in
+      maxDamp: 0.16,    // damp at/above top speed
+      boostDamp: 0.26,  // damp while actively boosting (overrides the speed-based value)
+    },
+  },
 
   render: {
     // Scenery chunks and billboards past this distance aren't drawn — the
@@ -183,9 +229,11 @@ export const CONFIG = {
 
   ai: {
     enabled: true,      // false = solo time trial (no opponents built at all)
-    lateralAccel: 9.5,  // cornering limit used to compute their racing speed (feeds track.js's vtAI table)
-    brake: 7.5,          // braking-lookahead rate for the same vtAI table
-    maxSpeed: 20,
+    lateralAccel: 11,   // cornering limit used to compute their racing speed (feeds track.js's vtAI table)
+                          // — scaled up alongside physics.mu so the pack still corners like it belongs
+                          // at the player's new (grippier, faster) pace instead of falling behind
+    brake: 8.6,          // braking-lookahead rate for the same vtAI table
+    maxSpeed: 23,        // scaled up alongside physics.maxSpeed/engineAccel (see above)
     skills: [0.93, 0.97, 1.01],          // per-opponent speed factor
     colors: [0xe74c3c, 0x3498db, 0xf1c40f],
     offsets: [-1.8, 0, 1.8],             // preferred lateral line
@@ -214,6 +262,51 @@ export const CONFIG = {
       chance: 0.9,       // fraction of corners that get the assist
       headingRate: 8,    // 1/s blend of heading toward the spline tangent
       latDamp: 6,        // 1/s bleed-off of the slide (lateral) component of velocity
+    },
+    // Awareness (game/src/ai.js): a following-distance safety net, independent
+    // of which lane anyone's in (see `lanes` below for the actual line
+    // choice) — whoever's directly ahead in roughly this car's own path gets
+    // its speed matched rather than driven into, since a lane switch takes a
+    // moment to carry out.
+    awareness: {
+      lookAhead: 9,           // base scan distance (m) ahead for a blocking car
+      lookAheadSpeedMul: 0.6, // + this * own speed, so faster cars look further ahead
+      lateralThreshold: 2.6,  // m either side of the AI's own line that counts as "in the way"
+      brakeDist: 7,           // inside this following distance, cap speed to the blocker's own...
+      brakeMargin: 2,         // ...speed plus this margin, so it doesn't ride the bumper flat out
+    },
+    // Lanes (game/src/ai.js): three discrete lines across the road — inside,
+    // the spline itself (mid), and outside — rather than a small reactive
+    // nudge, which read as too subtle to notice. Re-picked on every
+    // straight<->corner transition (see pickLane): entering a corner
+    // prefers the inside line (the racing line — see barriers.js's own
+    // -sign*curv "concave face" test, reused here for which side inside
+    // IS); entering a straight has no inside/outside to prefer, so it just
+    // prefers the car's own habitual line (its baseOffset's side). Either
+    // way, falls back through the other two lines if the preferred one's
+    // already claimed — by another AI actually committed to it (compared
+    // against its own chosen lane, not wherever it happens to be cruising)
+    // or by the player's literal current position.
+    lanes: {
+      offsetFrac: 0.62,     // inside/outside lane offset, as a fraction of the track's usable half-width
+      aheadDist: 20,        // m of arc-length ahead another car's own lane claim reaches
+      behindDist: 6,        // ...and behind — a car just passed still holds its line for a moment
+      // Fraction of the (small, track-width-dependent) lane offset itself —
+      // not a fixed meter value: these tracks run 5.6-7m wide, so a fixed
+      // tolerance sized for a wide track swallowed the entire lane spacing
+      // on a narrow one and made every corner look fully occupied.
+      lateralTolFrac: 0.5,
+      switchRate: 3,        // 1/s ease onto the newly picked line — no snapping between lanes
+    },
+    // AI boost usage (game/src/ai.js): spends the same CONFIG.boost tank the
+    // player has (filled by the same drift/wheelspin reward loop) either to
+    // force a pass on a blocking car or, once comfortably full, just to burn
+    // it off on an open straight — never mid-corner, where the extra top
+    // speed only feeds a spin instead of buying anything.
+    boostAI: {
+      cruiseThreshold: 55, // meter needed before a cruise-boost is even considered
+      cruiseChance: 0.15,  // chance/sec of one triggering once eligible
+      duration: 2,         // seconds a triggered cruise-boost holds the throttle down
     },
   },
 

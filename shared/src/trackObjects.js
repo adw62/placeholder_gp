@@ -24,7 +24,7 @@
 import * as THREE from "three";
 import { CONFIG } from "./config.js";
 import { buildSpline } from "./spline.js";
-import { makeGroundSampler } from "./environment.js";
+import { makeGroundSampler, computeWaterPits } from "./environment.js";
 import {
   buildTree, buildBillboard, buildBarrier, buildApexKerb, buildTireBarrier, buildBuilding, buildCutoutSprite, buildCrowdFigure,
   buildPillar, buildLampTokyo, buildLightCone,
@@ -620,12 +620,12 @@ function placeRibbonBand(group, spline, band, rng, splineId, bandIndex) {
 const SHORE_TEX_RES = 96;
 const SHORE_HEIGHT_RANGE = [-5, 25];
 const SHORE_MARGIN = 30;
-function bakeShoreTexture(spline, mesh) {
+function bakeShoreTexture(spline, mesh, pits) {
   mesh.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(mesh);
   const minX = box.min.x - SHORE_MARGIN, maxX = box.max.x + SHORE_MARGIN;
   const minZ = box.min.z - SHORE_MARGIN, maxZ = box.max.z + SHORE_MARGIN;
-  const sample = makeGroundSampler(spline);
+  const sample = makeGroundSampler(spline, pits);
   const [rangeMin, rangeMax] = SHORE_HEIGHT_RANGE;
   const data = new Uint8Array(SHORE_TEX_RES * SHORE_TEX_RES);
   for (let iz = 0; iz < SHORE_TEX_RES; iz++) {
@@ -676,7 +676,12 @@ export function buildTrackObjects(def, spline, rng, splineId = "main") {
   points.forEach((pt, i) => placePoint(group, spline, pt, rng, billboards, splineId, i));
   const waterMeshes = [];
   group.traverse((o) => { if (o.userData.animatedWater) waterMeshes.push(o); });
-  for (const w of waterMeshes) bakeShoreTexture(spline, w);
+  // Terrain pits (see environment.js's computeWaterPits) are main-track-only —
+  // an extra spline's own arc-length parameterization doesn't correspond to
+  // def.trackObjects.points' `s` values, so passing pits there would bake a
+  // bogus shoreline against the wrong geometry entirely.
+  const pits = splineId === "main" ? computeWaterPits(def, spline) : [];
+  for (const w of waterMeshes) bakeShoreTexture(spline, w, pits);
   return { group, billboards, waterMeshes };
 }
 

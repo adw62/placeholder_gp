@@ -248,6 +248,13 @@ export const ASSETS = {
     // Old Town market stall, close to the Corkscrew's barrier line.
     // Camera-facing like lamp/flag/obelisk — small roadside furniture.
     marketStall: { folder: "assets/textures/marketStall/", width: 3.2, height: 2.4 },
+    // Marsh reeds / papyrus clusters — Nile-riverbank / desert-oasis
+    // water's-edge dressing. cross: true, same shimmer-avoidance reasoning
+    // as tree/pine/conifer/palm above (thin vertically-detailed foliage
+    // viewed from many angles). Much shorter than palm: a low clump, not a
+    // tree. Dusty desaturated olive-green tone (not lush jungle green) to
+    // stay consistent with the rest of this sandstone/tan kit.
+    reed: { folder: "assets/textures/reed/", width: 1.2, height: 2.2, cross: true },
     // ---- Monaco Street Circuit kit ----
     // Monegasque red/white bicolour pennant — deliberately its own folder,
     // not more images in the shared `flag` folder above (that one is
@@ -2055,12 +2062,45 @@ export function buildHarbourCrane(rng) {
 // on the same reasoning as buildMonkeyTree/tunnel portals: it sits close to
 // the road at "Sphinx Sweep" so the player actually looks at it through the
 // corner, not just glimpses a silhouette in passing — a billboard read as a
-// paper cutout at that range. Lying-lion pose: long body + tapered
-// forelegs reaching toward the road (-X, same "reach toward the track"
-// convention buildMonkeyTree uses for its leaning trunk), head + nemes
-// headdress at the far/raised end. NOT collidable (COLLIDABLE_BARRIER_TYPES)
-// — it's a backdrop monument set back beyond the runoff, not something the
-// car should be able to clip.
+// paper cutout at that range.
+//
+// Couchant-lion anatomy, nose-to-tail axis along local X, front end at -X
+// (same "reach toward the track" convention buildMonkeyTree uses for its
+// leaning trunk, just on X instead of Z here): the chest, head and both
+// forepaws all share the -X end, because on the real Sphinx the head sits
+// directly above the raised chest with the paws stretched out below it —
+// they read as ONE mass, not two separate towers. The haunches (rump) are a
+// second, lower hump at the +X/rear end, connected by a long low back/torso
+// slab so the whole thing silhouettes as a single lying body with the head
+// as its tallest point, not a stack of same-height crates.
+//
+// Body LENGTH deliberately runs along local X, NOT Z — verified against
+// this point's actual fixed placement rotation (conform:false base yaw
+// aligns local Z with the track tangent, then rotX:pi, rotY:-0.19, rotZ:pi
+// are layered on top as sequential intrinsic rotations): working out where
+// each local axis actually ends up in world space, local Z lands almost
+// exactly on the tangent direction (~11 deg off dead-ahead/behind) — i.e.
+// straight down the road at THIS point's own arc position, which is one
+// contributing reason the long axis reading badly on Z; X is closer to
+// correct. BUT: measuring the actual tuned trackside camera's gaze
+// (editor/preview.html's `track` mode looks from s toward s+ahead on the
+// *centerline*) against this prop's own placement (s=42.22, offset 19.4m,
+// well past where the camera is looking) showed the camera-to-object sight
+// line doesn't cleanly match either local axis on this curving corner —
+// swapping to X-long alone (verified by an A/B render with an extra ±90°
+// group-level rotation) barely changed the on-screen read, so axis choice
+// alone was not the fix.
+//
+// The actual fix: don't rely on hitting one exact broadside angle at all —
+// build the body proportions so elongated (~9:1 length:height) and LOW that
+// the "lying down" silhouette survives being viewed from a range of 3/4
+// angles, not just a perfect side-on shot, the way the real monument reads
+// from nearly any approach. Also narrowed the head/crown footprint well
+// below the body's so it can't be confused for "another same-size crate" —
+// legibility now comes from proportion + contrast, not from precisely
+// aiming a specific camera. NOT collidable (COLLIDABLE_BARRIER_TYPES) — it's
+// a backdrop monument set back beyond the runoff, not something the car
+// should be able to clip.
 let _sphinxMats = null;
 function sphinxAssets() {
   if (_sphinxMats) return;
@@ -2077,73 +2117,90 @@ export function buildSphinx(rng) {
   const g = new THREE.Group();
   const scale = 0.92 + rng() * 0.16; // mild per-instance size variance even though this is a one-off
 
-  // stepped stone platform it "sits" on, eroded sand drifted against one side
-  const platform = new THREE.Mesh(new THREE.BoxGeometry(15.5 * scale, 0.7, 7.6 * scale), dark);
-  platform.position.set(0, 0.35, 0);
+  // stepped stone platform it "sits" on — long axis X, ~9:1 vs. body height,
+  // enough margin past the body span (haunch at +10 to paw tips at -12.6,
+  // scale=1) that nothing hangs off its own edge from any angle
+  const platform = new THREE.Mesh(new THREE.BoxGeometry(26 * scale, 0.7, 6.6 * scale), dark);
+  platform.position.set(-1.3 * scale, 0.35, 0);
   platform.receiveShadow = platform.castShadow = true;
   g.add(platform);
 
-  // haunches (rear, tall) tapering down to the shoulders
-  const haunch = new THREE.Mesh(new THREE.BoxGeometry(3.6 * scale, 4.6 * scale, 6.2 * scale), stone);
-  haunch.position.set(4.6 * scale, 0.7 + 2.3 * scale, 0);
+  // rear haunches (rump): LOW and long, not a competing tower — this and
+  // the torso/shoulders below all stay under ~1.8*scale tall so the whole
+  // body silhouette reads as a long low mass no matter the viewing angle
+  const haunch = new THREE.Mesh(new THREE.BoxGeometry(4.0 * scale, 1.6 * scale, 5.2 * scale), stone);
+  haunch.position.set(8.0 * scale, 0.7 + 0.8 * scale, 0);
   haunch.castShadow = haunch.receiveShadow = true;
   g.add(haunch);
 
-  const shoulders = new THREE.Mesh(new THREE.BoxGeometry(3.2 * scale, 3.4 * scale, 5.6 * scale), shade);
-  shoulders.position.set(1.6 * scale, 0.7 + 1.9 * scale, 0);
-  shoulders.castShadow = shoulders.receiveShadow = true;
-  g.add(shoulders);
-
-  // long low torso running forward, narrowing toward the paws
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(5.2 * scale, 2.1 * scale, 4.4 * scale), stone);
-  torso.position.set(-2.0 * scale, 0.7 + 1.15 * scale, 0);
+  // long low back/torso connecting the rump to the chest — this is what
+  // reads as "lying down" rather than "two disconnected blocks"; it's the
+  // single longest piece in the whole prop
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(9.5 * scale, 1.4 * scale, 4.2 * scale), shade);
+  torso.position.set(2.2 * scale, 0.7 + 0.7 * scale, 0);
   torso.castShadow = torso.receiveShadow = true;
   g.add(torso);
 
-  // two extended forepaws reaching toward the road
+  // chest/shoulders — the FRONT of the body, raised, directly under the
+  // head (paws reach further forward from here, same end as the head)
+  const shoulders = new THREE.Mesh(new THREE.BoxGeometry(3.4 * scale, 1.8 * scale, 3.8 * scale), stone);
+  shoulders.position.set(-4.8 * scale, 0.7 + 0.9 * scale, 0);
+  shoulders.castShadow = shoulders.receiveShadow = true;
+  g.add(shoulders);
+
+  // two extended forepaws reaching toward the road from the chest — same
+  // end of the body as the head, so the whole front reads as one animal
+  // leaning forward rather than a body and a head at opposite ends. The
+  // left/right pair sits side-by-side along Z (across the body's own
+  // width), since X is the nose-to-tail axis.
   for (const zs of [-1, 1]) {
-    const paw = new THREE.Mesh(new THREE.BoxGeometry(3.4 * scale, 1.15 * scale, 1.35 * scale), shade);
-    paw.position.set(-6.1 * scale, 0.7 + 0.65 * scale, zs * 1.3 * scale);
+    const paw = new THREE.Mesh(new THREE.BoxGeometry(6.0 * scale, 0.9 * scale, 1.1 * scale), shade);
+    paw.position.set(-9.3 * scale, 0.7 + 0.45 * scale, zs * 1.0 * scale);
     paw.castShadow = paw.receiveShadow = true;
     g.add(paw);
-    // a rougher, eroded step at each paw's tip
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.7 * scale, 0.9 * scale, 1.5 * scale), dark);
-    tip.position.set(-7.9 * scale, 0.7 + 0.5 * scale, zs * 1.3 * scale);
+    // a rougher, eroded step at each paw's tip — reads as toes/claws
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.8 * scale, 0.7 * scale, 1.25 * scale), dark);
+    tip.position.set(-12.2 * scale, 0.7 + 0.35 * scale, zs * 1.0 * scale);
     tip.castShadow = tip.receiveShadow = true;
     g.add(tip);
   }
 
-  // head block, raised above the shoulders at the rear
-  const head = new THREE.Mesh(new THREE.BoxGeometry(2.0 * scale, 2.3 * scale, 2.5 * scale), shade);
-  head.position.set(5.4 * scale, 0.7 + 3.9 * scale + 1.15 * scale, 0);
+  // head block, directly above the chest/shoulders at the FRONT — deliberately
+  // narrower (in X and Z) than every body piece so it can't read as "another
+  // crate," only as a head perched on the body
+  const shouldersTop = 0.7 + 1.8 * scale;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(1.8 * scale, 2.0 * scale, 2.2 * scale), shade);
+  head.position.set(-4.8 * scale, shouldersTop + 1.0 * scale, 0);
   head.castShadow = head.receiveShadow = true;
   g.add(head);
-  // simplified brow/face slab, slightly forward and undercut
-  const face = new THREE.Mesh(new THREE.BoxGeometry(0.5 * scale, 1.6 * scale, 2.1 * scale), dark);
-  face.position.set(6.35 * scale, 0.7 + 3.9 * scale + 1.0 * scale, 0);
+  // simplified brow/face slab, forward and undercut, facing down the road
+  const face = new THREE.Mesh(new THREE.BoxGeometry(0.45 * scale, 1.4 * scale, 1.9 * scale), dark);
+  face.position.set(-5.65 * scale, shouldersTop + 0.9 * scale, 0);
   face.castShadow = face.receiveShadow = true;
   g.add(face);
 
-  // nemes headdress: a wider flat-topped block over the head + two lappets
-  // (flat slabs) hanging down either side of the neck — the silhouette that
-  // actually reads as "sphinx" from a distance
-  const crown = new THREE.Mesh(new THREE.BoxGeometry(2.3 * scale, 1.0 * scale, 3.0 * scale), stone);
-  crown.position.set(5.2 * scale, 0.7 + 3.9 * scale + 2.55 * scale, 0);
+  // nemes headdress: a wider flat-topped block over the head + two flared
+  // lappets (slabs) hanging down either side of the neck, in front of the
+  // shoulders — the silhouette that actually reads as "pharaoh" rather
+  // than "crate on top of a crate"
+  const headTop = shouldersTop + 2.0 * scale;
+  const crown = new THREE.Mesh(new THREE.BoxGeometry(2.2 * scale, 0.9 * scale, 2.8 * scale), stone);
+  crown.position.set(-4.8 * scale, headTop + 0.45 * scale, 0);
   crown.castShadow = crown.receiveShadow = true;
   g.add(crown);
   for (const zs of [-1, 1]) {
-    const lappet = new THREE.Mesh(new THREE.BoxGeometry(1.5 * scale, 2.0 * scale, 0.55 * scale), stone);
-    lappet.position.set(5.7 * scale, 0.7 + 3.9 * scale + 0.4 * scale, zs * 1.55 * scale);
-    lappet.rotation.z = zs * 0.06;
+    const lappet = new THREE.Mesh(new THREE.BoxGeometry(1.3 * scale, 2.2 * scale, 0.5 * scale), stone);
+    lappet.position.set(-4.1 * scale, shouldersTop + 0.6 * scale, zs * 1.5 * scale);
+    lappet.rotation.x = zs * 0.08;
     lappet.castShadow = lappet.receiveShadow = true;
     g.add(lappet);
   }
 
-  // wind-drifted sand dune banked against the flank, motivating why the
-  // platform's far side is half-buried — real erosion detail, not filler
+  // wind-drifted sand dune banked against the rear flank — real erosion
+  // detail, not filler
   const drift = new THREE.Mesh(new THREE.ConeGeometry(3.2 * scale, 1.6 * scale, 8, 1, true), dark);
-  drift.scale.set(1, 0.5, 1.6);
-  drift.position.set(3.4 * scale, 0.55, -4.6 * scale);
+  drift.scale.set(1.6, 0.5, 1);
+  drift.position.set(10.5 * scale, 0.55, -3.2 * scale);
   drift.rotation.x = Math.PI;
   drift.castShadow = false; drift.receiveShadow = true;
   g.add(drift);
