@@ -24,9 +24,18 @@
 import * as THREE from "three";
 import { CONFIG } from "./config.js";
 import { buildSpline } from "./spline.js";
+import { makeGroundSampler } from "./environment.js";
 import {
   buildTree, buildBillboard, buildBarrier, buildApexKerb, buildTireBarrier, buildBuilding, buildCutoutSprite, buildCrowdFigure,
   buildPillar, buildLampTokyo, buildLightCone,
+  buildRockOutcrop, buildMonkeyTree, buildTimberRail,
+  buildTunnelPortalMountain, buildTunnelPortalExpressway,
+  buildOldTownFacade,
+  buildSphinx, buildMarketStall,
+  buildRivieraFacade, buildCasino, buildYacht, buildHarbourCrane, buildOcean,
+  TIMBER_HALF_THICKNESS, TIMBER_HALF_LENGTH,
+  OLDTOWN_HALF_THICKNESS, OLDTOWN_HALF_LENGTH,
+  RIVIERA_HALF_THICKNESS, RIVIERA_HALF_LENGTH,
   kerbTexture, getRoadTexture, getRibbonAtlas, ASSETS,
   tunnelWallTexture, tunnelCeilingTexture,
   BARRIER_HALF_THICKNESS, BARRIER_HALF_LENGTH, TIRE_RADIUS,
@@ -45,6 +54,51 @@ export const OBJECT_TYPES = {
   // at a fixed local position) — see buildLampTokyo for why this isn't the
   // cutoutLampTokyo billboard.
   lampTokyo: { label: "Lamp (Tokyo)", build: buildLampTokyo },
+  // Mountain props (see the builders in placeholders.js). All three are
+  // real geometry because all three live inside the range where a flat
+  // billboard reads as cardboard from the chase camera.
+  rockOutcrop: { label: "Rock Outcrop", build: buildRockOutcrop },
+  monkeyTree: { label: "Monkey Tree (dead)", build: buildMonkeyTree },
+  timberRail: { label: "Timber Rail", build: buildTimberRail },
+  // Facades that close a splineTunnel's raw mouth (its walls/roof are
+  // zero-thickness ribbons that otherwise end in a razor edge in mid-air).
+  // Place as a `point` at the band's from/to arc position with offset 0 —
+  // they're built symmetric about local Z, so the same prop works at an
+  // entry mouth, an exit mouth and seen from inside. Sized for a nominal
+  // PORTAL_SPAN x PORTAL_RISE bore; use scaleX/scaleY for a band whose
+  // offset/height differ. Two shapes rather than one shape with two
+  // textures, because the silhouette is what says which country it's in.
+  tunnelPortalMountain: { label: "Tunnel Portal (mountain)", build: buildTunnelPortalMountain },
+  tunnelPortalExpressway: { label: "Tunnel Portal (expressway)", build: buildTunnelPortalExpressway },
+  // Giza Desert Raceway's Old Town facade — real 3D (not a cutout) because
+  // it lines the Corkscrew within a couple of metres of the car. Collidable
+  // like a barrier: the claustrophobic narrow street IS the wall. See
+  // buildOldTownFacade for why this isn't just buildBuilding.
+  buildingOldTown: { label: "Building (Old Town facade)", build: buildOldTownFacade },
+  // Giza Desert Raceway hero landmarks — real 3D because both sit close
+  // enough to the road to be seen edge-on (the Sphinx at Sphinx Sweep, the
+  // market stall on the Corkscrew's barrier line). Neither is in
+  // COLLIDABLE_BARRIER_TYPES: the Sphinx is a backdrop monument set back
+  // beyond the runoff, the stall sits recessed against the building line.
+  sphinx: { label: "The Sphinx", build: buildSphinx },
+  marketStall: { label: "Market Stall", build: buildMarketStall },
+  // Monaco Street Circuit kit. buildingRiviera is real 3D + collidable for
+  // the same reason buildingOldTown is (lines the tight climbing streets
+  // within a couple of metres of the car). casinoMonteCarlo is the one
+  // genuinely grand building — a hero landmark placed as a single `point`,
+  // never banded (see the singular-landmark rule). yacht/harbourCrane are
+  // marina infrastructure — plural by nature, so bands/sparse points are
+  // both fine — real 3D because the harbourfront puts them close enough to
+  // read edge-on from the chase camera. None of the marina props are
+  // collidable: they sit beyond the harbour wall, over the water.
+  buildingRiviera: { label: "Building (Riviera facade)", build: buildRivieraFacade },
+  casinoMonteCarlo: { label: "Casino de Monte-Carlo", build: buildCasino },
+  yacht: { label: "Yacht", build: buildYacht },
+  harbourCrane: { label: "Harbour Crane", build: buildHarbourCrane },
+  // Plain flat square, positioned/sized with the same translate/scale gizmo
+  // every other point already has (Object tab -> Select) — no footprint math,
+  // just drag it where the water should be and stretch it to cover the bay.
+  ocean: { label: "Ocean", build: buildOcean },
   billboard: { label: "Billboard", build: buildBillboard },
   // Rigged crowd figure (crowdEditor.html + src/crowd.js) — shares the
   // Cutout types' placement/facing machinery. Bands support multiple rows
@@ -162,6 +216,9 @@ const COLLIDABLE_BARRIER_TYPES = new Map([
   ["barrier", { thick: BARRIER_HALF_THICKNESS, reach: BARRIER_HALF_LENGTH }],
   ["splineBarrier", { thick: 0, reach: 0 }],
   ["tireBarrier", { thick: TIRE_RADIUS, reach: TIRE_RADIUS }],
+  ["timberRail", { thick: TIMBER_HALF_THICKNESS, reach: TIMBER_HALF_LENGTH }],
+  ["buildingOldTown", { thick: OLDTOWN_HALF_THICKNESS, reach: OLDTOWN_HALF_LENGTH }],
+  ["buildingRiviera", { thick: RIVIERA_HALF_THICKNESS, reach: RIVIERA_HALF_LENGTH }],
 ]);
 
 export function computeWallProfile(samples, length, bands, fallbackDist) {
@@ -492,7 +549,12 @@ function buildSplineApexKerbRibbon(spline, band, sign) {
   const halfW = CONFIG.track.kerbWidth / 2;
   const center = (band.offset ?? (spline.halfW ?? 0) + 0.3) * sign;
   const geo = ribbonFlatGeometry(spline, fromS, toS, center - halfW, center + halfW, 0.03, 0.5);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: kerbTexture(), roughness: 0.8 }));
+  // band.tex opts into a different kerb color scheme (kerbTexture's
+  // `scheme` param, e.g. "yellow" for a mountain track's painted kerbs) --
+  // same convention as splineTarmac/splineBarrier's own `tex` field.
+  // Undefined -> kerbTexture()'s own default, so every existing track
+  // (never sets this) keeps the red/white look unchanged.
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: kerbTexture(band.tex), roughness: 0.8 }));
   mesh.receiveShadow = true;
   return mesh;
 }
@@ -526,7 +588,10 @@ function buildSplineTarmacRibbon(spline, band, sign) {
   const w = Math.max(1, band.scaleX ?? 5);
   const center = (band.offset ?? 0) * sign;
   const tile = Math.max(1, band.spacing ?? 8);
-  const geo = ribbonFlatGeometry(spline, fromS, toS, center - w / 2, center + w / 2, mat.transparent ? 0.05 : 0.02, 1 / tile);
+  // yLift clears the base road mesh's own 0.02 lift (track.js's stripGeometry)
+  // — an opaque overlay (cobble, dock, ...) sitting at that exact same height
+  // z-fights it, so this needs to be visibly different, not just non-zero.
+  const geo = ribbonFlatGeometry(spline, fromS, toS, center - w / 2, center + w / 2, mat.transparent ? 0.05 : 0.035, 1 / tile);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   return mesh;
@@ -536,6 +601,7 @@ function placeRibbonBand(group, spline, band, rng, splineId, bandIndex) {
   const type = OBJECT_TYPES[band.type];
   for (const sign of signsFor(band.side ?? "both")) {
     const mesh = type.buildRibbon(spline, band, sign, rng);
+    mesh.position.y += band.yOffset ?? 0; // manual vertical nudge — same field/convention as placeBand/placePoint, just unwired for ribbons until now
     mesh.userData.splineId = splineId; // same click-to-band-row identity as placeBand
     mesh.userData.bandIndex = bandIndex;
     mesh.userData.ribbon = true; // owns its geometry (instance types share cached geo) — editor live-refresh disposes accordingly
@@ -543,16 +609,60 @@ function placeRibbonBand(group, spline, band, rng, splineId, bandIndex) {
   }
 }
 
+// Bakes "how high is the ground here" into a small texture an Ocean point's
+// shader samples to decide where waves actually break — the SAME height
+// rule buildGroundGeometry's own vertices use (makeGroundSampler), just
+// evaluated over the ocean mesh's own world footprint (+ margin) instead of
+// the whole map. Re-baked on every full rebuild (Generate); a live gizmo
+// drag between rebuilds just moves the existing bake, which is fine unless
+// dragged well past the margin — same "Generate to make it authoritative"
+// deal every other point already has.
+const SHORE_TEX_RES = 96;
+const SHORE_HEIGHT_RANGE = [-5, 25];
+const SHORE_MARGIN = 30;
+function bakeShoreTexture(spline, mesh) {
+  mesh.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(mesh);
+  const minX = box.min.x - SHORE_MARGIN, maxX = box.max.x + SHORE_MARGIN;
+  const minZ = box.min.z - SHORE_MARGIN, maxZ = box.max.z + SHORE_MARGIN;
+  const sample = makeGroundSampler(spline);
+  const [rangeMin, rangeMax] = SHORE_HEIGHT_RANGE;
+  const data = new Uint8Array(SHORE_TEX_RES * SHORE_TEX_RES);
+  for (let iz = 0; iz < SHORE_TEX_RES; iz++) {
+    const wz = minZ + ((maxZ - minZ) * iz) / (SHORE_TEX_RES - 1);
+    for (let ix = 0; ix < SHORE_TEX_RES; ix++) {
+      const wx = minX + ((maxX - minX) * ix) / (SHORE_TEX_RES - 1);
+      const t = THREE.MathUtils.clamp((sample(wx, wz) - rangeMin) / (rangeMax - rangeMin), 0, 1);
+      data[iz * SHORE_TEX_RES + ix] = Math.round(t * 255);
+    }
+  }
+  const tex = new THREE.DataTexture(data, SHORE_TEX_RES, SHORE_TEX_RES, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.needsUpdate = true;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+
+  const u = mesh.material.uniforms;
+  u.uShoreTex.value?.dispose?.();
+  u.uShoreTex.value = tex;
+  u.uShoreMin.value.set(minX, minZ);
+  u.uShoreSize.value.set(maxX - minX, maxZ - minZ);
+  u.uRangeMin.value = rangeMin;
+  u.uRangeMax.value = rangeMax;
+}
+
 // Places one def's worth of bands/points against one spline-like object —
 // the main track (has wallDist/halfW) or a plain buildSpline() result for
 // an extra spline (defaultBands() is the only thing that assumes
 // wallDist/halfW, so it's never called for extra splines).
-// Returns { group, billboards } — billboards need per-frame camera-facing
-// rotation from main.js/editor.js. splineId ("main" or extraSplines[].id)
-// plus pointIndex/bandIndex is stamped onto each placed object's userData
-// for the editor to map a clicked mesh back to its trackObjects entry
-// (points get a transform gizmo, band instances select their band row);
-// unused at race time.
+// Returns { group, billboards, waterMeshes } — billboards need per-frame
+// camera-facing rotation from main.js/editor.js; waterMeshes (any placed
+// "Ocean" point — see placeholders.js's buildOcean) need their shader's
+// uTime uniform advanced each frame, same idea. splineId ("main" or
+// extraSplines[].id) plus pointIndex/bandIndex is stamped onto each placed
+// object's userData for the editor to map a clicked mesh back to its
+// trackObjects entry (points get a transform gizmo, band instances select
+// their band row); unused at race time.
 export function buildTrackObjects(def, spline, rng, splineId = "main") {
   const group = new THREE.Group();
   const billboards = [];
@@ -564,7 +674,10 @@ export function buildTrackObjects(def, spline, rng, splineId = "main") {
     else placeBand(group, spline, band, rng, billboards, splineId, i);
   });
   points.forEach((pt, i) => placePoint(group, spline, pt, rng, billboards, splineId, i));
-  return { group, billboards };
+  const waterMeshes = [];
+  group.traverse((o) => { if (o.userData.animatedWater) waterMeshes.push(o); });
+  for (const w of waterMeshes) bakeShoreTexture(spline, w);
+  return { group, billboards, waterMeshes };
 }
 
 // Builds objects for the main track AND every def.extraSplines entry —
@@ -573,9 +686,11 @@ export function buildTrackObjects(def, spline, rng, splineId = "main") {
 export function buildAllTrackObjects(def, track, rng) {
   const group = new THREE.Group();
   const billboards = [];
+  const waterMeshes = [];
   const main = buildTrackObjects(def, track, rng, "main");
   group.add(main.group);
   billboards.push(...main.billboards);
+  waterMeshes.push(...main.waterMeshes);
   for (const ex of def.extraSplines ?? []) {
     if (!ex.controlPoints || ex.controlPoints.length < 2) continue;
     const spline = buildSpline(ex.controlPoints, !!ex.closed, CONFIG.track.samples);
@@ -585,6 +700,14 @@ export function buildAllTrackObjects(def, track, rng) {
     const r = buildTrackObjects({ trackObjects }, spline, rng, ex.id);
     group.add(r.group);
     billboards.push(...r.billboards);
+    waterMeshes.push(...r.waterMeshes);
   }
-  return { group, billboards };
+  return { group, billboards, waterMeshes };
+}
+
+// Per-frame hook (mirrors updateCrowdBillboard's own convention) — call from
+// every render loop that owns a buildAllTrackObjects() result's waterMeshes:
+// main.js's step(), editor.js's tick(), preview.html's animation loop.
+export function updateOceanTime(waterMeshes, nowMs) {
+  for (const w of waterMeshes) w.material.uniforms.uTime.value = nowMs / 1000;
 }

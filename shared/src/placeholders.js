@@ -92,6 +92,30 @@ export const ASSETS = {
     // keeps themed variants (no sponsor-board branding here) from mixing
     // with whatever other tracks' barrier art lives in that folder.
     barrierExpressway: "assets/textures/barriersExpressway/",
+    // Mountain-road guardrails (timber log rail, weathered plank rail,
+    // plain Armco, dry-stone retaining wall) — opted into via a
+    // splineBarrier band's `tex: "barrierTimber"`. Separate from the shared
+    // `barrier` atlas above because that one is full of Italian sponsor
+    // boards belonging to Circuito di Roma.
+    barrierTimber: "assets/textures/barriersTimber/",
+    // Low sandstone/mudbrick wall — Giza Desert Raceway's desert-perimeter
+    // and Old Town wall look (coursed sandstone, weathered blocks, carved
+    // relief, mudbrick). Opted into via a splineBarrier band's
+    // `tex: "barrierSandstone"`. Its own key for the same reason
+    // barrierTimber/barrierExpressway get their own: keeps it from mixing
+    // with other tracks' barrier art in the shared folders above.
+    barrierSandstone: "assets/textures/barrierSandstone/",
+    // Plain unbranded galvanized Armco (red/white rail, yellow/black hazard
+    // rail, a sun-dusted variant) — Giza Desert Raceway's open-circuit
+    // safety barrier. NOT the shared `barrier` atlas above: that folder's
+    // otherwise-generic tiles are mixed in with Circuito di Roma's own
+    // sponsor boards (spqr/veloce/roma/caffe/gomme, one of them literally
+    // the Italian flag) baked into the same shared atlas, so pulling from
+    // it here would put Roman sponsor branding on a Giza barrier. This key
+    // is genuinely generic (no place-specific branding at all) and reusable
+    // by any future track that wants a plain rail. Opt in via a
+    // splineBarrier band's `tex: "barrierPlain"`.
+    barrierPlain: "assets/textures/barrierPlain/",
   },
   // Road-surface textures for the "Spline Tarmac" ribbon, discovered the
   // same way. Each file is one named surface a band picks via its `tex`
@@ -145,11 +169,96 @@ export const ASSETS = {
       folder: "assets/textures/lampTokyo/", width: 1.3, height: 7.2,
       light: { color: 0xffb066, intensity: 1.6, distance: 17, decay: 2, heightFrac: 0.84 },
     },
+    // Mountain-circuit dressing kit (Trial Mountain). `conifer` is
+    // deliberately NOT more images in pine/: that folder holds Roman stone
+    // pines and every instance picks from it at random, so a Sierra fir
+    // dropped in there would sprout on Circuito di Roma too.
+    conifer: { folder: "assets/textures/conifer/", width: 4.6, height: 10.5, cross: true },
+    // Forested ridgeline and distant granite summits — the layer a
+    // "mountain" track's mountains actually live in. static: true (fixed
+    // backdrops, never camera-facing).
+    ridge: { folder: "assets/textures/ridge/", width: 72, height: 18, static: true },
+    peak: { folder: "assets/textures/peak/", width: 96, height: 36, static: true },
+    // Marshal post (post + flag/board + a marshal in hi-vis). cross: true —
+    // it sits on the barrier line where a single re-facing quad reads flat.
+    marshal: { folder: "assets/textures/marshal/", width: 1.7, height: 2.5, cross: true },
+    // Trackside mesh fence panel. static: true so it holds still along the
+    // road rather than swinging to face the camera — place with
+    // rotY: Math.PI/2 so the panel runs parallel to the track.
+    fence: { folder: "assets/textures/fence/", width: 3.4, height: 1.9, static: true },
+    // Service bridge over the road: legs reach the image's own bottom edge
+    // and the span between them is transparent, same drive-through
+    // convention as gantry/ above. Place at offset 0, yOffset 0.
+    bridge: { folder: "assets/textures/bridge/", width: 15.5, height: 9.7, static: true },
     flag: { folder: "assets/textures/flag/", width: 1.3, height: 2.6 },
     obelisk: { folder: "assets/textures/obelisk/", width: 1.6, height: 4.8 },
     chevron: { folder: "assets/textures/chevron/", width: 2.2, height: 1.05, static: true },
     grandstand: { folder: "assets/textures/grandstand/", width: 9, height: 2.7, static: true },
     pitbox: { folder: "assets/textures/pitbox/", width: 6.4, height: 2.0, static: true },
+    // ---- Giza Desert Raceway kit ----
+    // Giza plateau skyline (three pyramids, coursed stone bands, capstone
+    // remnant) — the desert horizon backdrop. static: true. Sized down from
+    // an earlier 110x38 pass that dwarfed everything else on the track at
+    // typical horizon-spline distance; 80x27.7 still reads as monumental at
+    // the 55-95m this is placed at without swallowing the frame.
+    pyramid: { folder: "assets/textures/pyramid/", width: 80, height: 27.7, static: true },
+    // The Great Sphinx now ships as a real 3D hero prop (OBJECT_TYPES.sphinx
+    // in trackObjects.js, built by buildSphinx in this file) placed close to
+    // the road at Sphinx Sweep, not this cutout — a billboard read as flat
+    // paper at the range the corner reveals it. This folder is kept
+    // registered (unused by the shipped track) in case a distant echo
+    // silhouette is ever wanted well past the 3D one on the horizon spline;
+    // per the one-representation-per-class-in-view rule, don't place both
+    // in sight of each other.
+    sphinx: { folder: "assets/textures/sphinx/", width: 26, height: 11, static: true },
+    // Old Cairo skyline — the Old Town horizon, distinct from the shared
+    // Roman-ish `skyline` and Tokyo `citySkyline` folders other tracks
+    // depend on. All 3 images are plain flat-roofed concrete apartment
+    // blocks (roof water tanks/dishes, punched windows) — real Cairo's
+    // ordinary building stock. static: true backdrop. Sized down from an
+    // earlier 100x30 pass that over-dominated the horizon at typical
+    // placement distance.
+    cairoSkyline: { folder: "assets/textures/cairoSkyline/", width: 78, height: 23.4, static: true },
+    // The ONE mosque — a single dome + twin minarets rising over a low
+    // rooftop line. Deliberately its own one-image folder rather than a
+    // 4th cairoSkyline variant: a repeating band would pick it at random
+    // right alongside the plain apartment blocks, diluting "rare landmark"
+    // into "1-in-4 chance." Placed exactly once, as a `point`, on the
+    // Corkscrew's approach. static: true.
+    cairoMosque: { folder: "assets/textures/cairoMosque/", width: 30, height: 13.5, static: true },
+    // Broken pylon gate / papyrus columns — Egyptian archaeological ruins
+    // framing the outer desert circuit. Deliberately a NEW folder, not
+    // more images in the Roman `ruins/` folder (aqueduct+temple) that
+    // Circuito di Roma depends on. static: true (mid-far backdrop).
+    ruinsEgypt: { folder: "assets/textures/ruinsEgypt/", width: 26, height: 10, static: true },
+    // Scattered Bedouin tents framing the outer desert sections. Camera-
+    // facing (not static) like crowd/building — a tent silhouette reads
+    // fine re-facing at the distance these sit.
+    bedouinTent: { folder: "assets/textures/bedouinTent/", width: 5, height: 3 },
+    // Palm trees (plaza + desert oases). cross: true, same shimmer-avoidance
+    // reasoning as tree/pine/conifer above.
+    palm: { folder: "assets/textures/palm/", width: 2.6, height: 6.5, cross: true },
+    // Low rolling sand-dune banks — foreground desert scatter. static: true
+    // (a landform, not something that should spin to face the camera).
+    dune: { folder: "assets/textures/dune/", width: 22, height: 7, static: true },
+    // Cable + hanging-lantern span over the Corkscrew's narrow streets —
+    // same drive-through convention as gantry/bridge (legs reach the
+    // image's own bottom edge, transparent middle). static: true.
+    cableSpan: { folder: "assets/textures/cableSpan/", width: 8, height: 7, static: true },
+    // Old Town market stall, close to the Corkscrew's barrier line.
+    // Camera-facing like lamp/flag/obelisk — small roadside furniture.
+    marketStall: { folder: "assets/textures/marketStall/", width: 3.2, height: 2.4 },
+    // ---- Monaco Street Circuit kit ----
+    // Monegasque red/white bicolour pennant — deliberately its own folder,
+    // not more images in the shared `flag` folder above (that one is
+    // italia.png/roma.png, locked to Circuito di Roma per the theme-gating
+    // rule). Small trackside/marshal-post flourish, camera-facing.
+    flagMonaco: { folder: "assets/textures/flagMonaco/", width: 1.3, height: 2.6 },
+    // Distant Riviera hillside — pastel apartment blocks stacked up a green
+    // hillside, the "city rising almost vertically from the water" backdrop
+    // the brief calls for. static: true (fixed horizon art, never camera-
+    // facing) — placed on an extraSpline behind the climbing section.
+    rivieraSkyline: { folder: "assets/textures/rivieraSkyline/", width: 90, height: 30, static: true },
   },
   // Rigged crowd kits authored in crowdEditor.html (see that page + the
   // "crowd" trackObjects type below) — every *.crowd.json dropped here is
@@ -246,8 +355,12 @@ export async function preloadAssets() {
   for (const car of ASSETS.carModels) {
     jobs.push(loadGLTF(gamePath(car.url)).then((m) => modelCache.set(carKey(car.id), m)));
   }
-  jobs.push(loadRibbonAtlas("barrier", gamePath(ASSETS.ribbonFolders.barrier), drawFallbackBarrierVariants));
-  jobs.push(loadRibbonAtlas("barrierExpressway", gamePath(ASSETS.ribbonFolders.barrierExpressway), drawFallbackBarrierVariants));
+  // Every registered ribbon atlas, not a hardcoded pair — adding a key to
+  // ASSETS.ribbonFolders is supposed to be the whole job, and a key that
+  // never got preloaded silently renders the red/white fallback stripe.
+  for (const [key, folder] of Object.entries(ASSETS.ribbonFolders)) {
+    jobs.push(loadRibbonAtlas(key, gamePath(folder), drawFallbackBarrierVariants));
+  }
   if (ASSETS.roadFolder) jobs.push(loadRoadTextures(gamePath(ASSETS.roadFolder)));
   for (const [key, spec] of Object.entries(ASSETS.spriteFolders)) {
     jobs.push(loadCutoutVariants(key, spec.folder ? gamePath(spec.folder) : spec.folder));
@@ -340,10 +453,16 @@ export function tarmacTexture() {
   });
 }
 
-export function kerbTexture() {
+// scheme: "redwhite" (default, every existing track keeps this look
+// unchanged) | "yellow" (mountain-circuit painted-kerb look, opted into via
+// a splineApexKerb band's `tex` field -- see buildSplineApexKerbRibbon).
+// Same striped-block layout either way, just a different palette, so this
+// stays a pure drop-in: no caller that doesn't pass a scheme is affected.
+export function kerbTexture(scheme = "redwhite") {
+  const palette = scheme === "yellow" ? ["#e8e8e8", "#e0a91c"] : ["#e8e8e8", "#d3382e"];
   return canvasTexture(64, 16, (ctx, w, h) => {
     for (let i = 0; i < 4; i++) {
-      ctx.fillStyle = i % 2 ? "#e8e8e8" : "#d3382e";
+      ctx.fillStyle = i % 2 ? palette[0] : palette[1];
       ctx.fillRect(i * (w / 4), 0, w / 4, h);
     }
   });
@@ -916,6 +1035,1192 @@ export function buildTireBarrier(rng) {
     tire.position.set((rng() - 0.5) * 0.06, TIRE_HEIGHT * (i + 0.5), (rng() - 0.5) * 0.06);
     tire.castShadow = tire.receiveShadow = true;
     g.add(tire);
+  }
+  return g;
+}
+
+// =====================================================================
+// Mountain-circuit props (Trial Mountain). All three are REAL 3D geometry
+// rather than cutouts on purpose: each one either sits inside the ~15 m
+// band where a flat plane reads as cardboard from the chase camera, or is
+// something the car can hit. Same construction rules as everything above —
+// a couple of THREE primitives in a Group, module-level shared geometry/
+// material so a few hundred instances don't reallocate, std()'s grained
+// material for the PS1 look.
+// =====================================================================
+
+// --- granite outcrop -------------------------------------------------
+// Close-range rock. A cliff face near the road CANNOT be a splineBarrier-
+// style ribbon (zero-thickness plane, razor top edge, one stretched
+// texture); banded with jitter + varied scaleX/Y/Z these read as a broken
+// rock cut instead. Origin at ground level; a band's scaleY is "how tall".
+let _rockBlockGeos = null, _rockMats = null;
+function rockOutcropAssets() {
+  if (_rockMats) return;
+  // Four angular blocks — low-poly icosahedra squashed into slabs/shards,
+  // flat-shaded so every facet is one quantized tone.
+  _rockBlockGeos = [];
+  for (const [rx, ry, rz] of [[1.0, 1.0, 1.0], [1.35, 0.6, 0.9], [0.7, 1.6, 0.75], [0.9, 1.1, 1.4]]) {
+    const g = new THREE.IcosahedronGeometry(1, 0);
+    g.scale(rx, ry, rz);
+    g.userData.shared = true;
+    _rockBlockGeos.push(g);
+  }
+  _rockMats = [0x8d8b84, 0x9a978e, 0x7c7a75, 0xa3a099].map((c) =>
+    std(c, { flatShading: true, roughness: 1 })
+  );
+  for (const m of _rockMats) m.userData.shared = true;
+}
+
+export function buildRockOutcrop(rng) {
+  rockOutcropAssets();
+  const g = new THREE.Group();
+  const blocks = 2 + ((rng() * 3) | 0);
+  for (let i = 0; i < blocks; i++) {
+    const geo = _rockBlockGeos[(rng() * _rockBlockGeos.length) | 0];
+    const m = new THREE.Mesh(geo, _rockMats[(rng() * _rockMats.length) | 0]);
+    const s = (i === 0 ? 0.95 : 0.4 + rng() * 0.6) * (0.8 + rng() * 0.45);
+    m.scale.set(s * (0.8 + rng() * 0.6), s * (1.0 + rng() * 0.9), s * (0.8 + rng() * 0.6));
+    // keep the cluster compact: a band's scaleX/Z multiplies these offsets
+    // too, so a wide spread here becomes a boulder in the road at scale 3
+    m.position.set((rng() - 0.5) * 0.9, m.scale.y * (0.35 + rng() * 0.2), (rng() - 0.5) * 1.3);
+    m.rotation.set((rng() - 0.5) * 0.5, rng() * Math.PI * 2, (rng() - 0.5) * 0.5);
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+  }
+  return g;
+}
+
+// --- the "monkey tree" ----------------------------------------------
+// Trial Mountain's signature landmark: a dead, bleached, gnarled trunk
+// leaning out over the road with bare overhanging limbs. One-off hero prop
+// (placed as a `point`, not a band), so it builds its own geometry per
+// instance for the gnarl to be genuinely irregular; only the two materials
+// are shared. Leans and reaches along local -X, the same convention
+// buildLampTokyo's arm uses — pick the point's `side` so that's the road,
+// or add rotY: Math.PI.
+let _deadWoodMat = null, _deadWoodDarkMat = null;
+function deadWoodAssets() {
+  if (_deadWoodMat) return;
+  _deadWoodMat = std(0x9a9186, { roughness: 1 });
+  _deadWoodDarkMat = std(0x6b6258, { roughness: 1 });
+  _deadWoodMat.userData.shared = _deadWoodDarkMat.userData.shared = true;
+}
+
+// One tapered limb from `a` to `b`, oriented by rotating +Y onto (b-a).
+function limb(a, b, r0, r1, mat) {
+  const v = b.clone().sub(a);
+  const geo = new THREE.CylinderGeometry(r1, r0, v.length(), 5);
+  geo.translate(0, v.length() / 2, 0);
+  geo.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.clone().normalize()));
+  const m = new THREE.Mesh(geo, mat);
+  m.position.copy(a);
+  m.castShadow = true;
+  return m;
+}
+
+export function buildMonkeyTree(rng) {
+  deadWoodAssets();
+  const g = new THREE.Group();
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  // trunk: three kinked segments, leaning out over the road (-X)
+  const p0 = V(0, 0, 0);
+  const p1 = V(-0.35 - rng() * 0.2, 2.1, 0.15 * (rng() - 0.5));
+  const p2 = V(-1.15 - rng() * 0.4, 3.9, 0.3 * (rng() - 0.5));
+  const p3 = V(-2.5 - rng() * 0.6, 5.0 + rng() * 0.5, 0.4 * (rng() - 0.5));
+  g.add(limb(p0, p1, 0.42, 0.30, _deadWoodDarkMat));
+  g.add(limb(p1, p2, 0.30, 0.20, _deadWoodMat));
+  g.add(limb(p2, p3, 0.20, 0.10, _deadWoodMat));
+  // root flare so it doesn't look pushed into the ground like a peg
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + rng() * 0.6;
+    g.add(limb(V(0, 0.35, 0), V(Math.cos(a) * 0.7, 0, Math.sin(a) * 0.7), 0.16, 0.07, _deadWoodDarkMat));
+  }
+  // bare overhanging limbs, weighted out over the road
+  const anchors = [p1, p2, p2, p3, p3, p3];
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    const out = 1.2 + rng() * 2.2;
+    const tip = V(a.x - out * (0.35 + rng() * 0.9), a.y + 0.5 + rng() * 1.5, a.z + (rng() - 0.5) * 2.6);
+    g.add(limb(a, tip, 0.13, 0.045, _deadWoodMat));
+    if (rng() < 0.75) {
+      const mid = a.clone().lerp(tip, 0.55);
+      g.add(limb(mid, V(mid.x - rng() * 1.2, mid.y + 0.6 + rng() * 1.1, mid.z + (rng() - 0.5) * 1.6),
+                 0.07, 0.025, _deadWoodMat));
+    }
+  }
+  // one snapped-off stub, low and blunt
+  g.add(limb(V(-0.2, 1.5, 0), V(0.9 + rng() * 0.5, 2.3, (rng() - 0.5) * 0.8), 0.12, 0.08, _deadWoodDarkMat));
+  return g;
+}
+
+// --- timber post-and-rail --------------------------------------------
+// The mountain-road guardrail: two rails on stout posts. Collidable (see
+// COLLIDABLE_BARRIER_TYPES in trackObjects.js), so its half-thickness and
+// half-length are exported for computeWallProfile exactly like the Armco's.
+// Long axis along Z, same convention as buildBarrier/buildApexKerb.
+export const TIMBER_HALF_THICKNESS = 0.09;
+export const TIMBER_HALF_LENGTH = 1.15;
+const TIMBER_HEIGHT = 0.72;
+let _timberPostGeo = null, _timberRailGeo = null, _timberMats = null;
+function timberRailAssets() {
+  if (_timberMats) return;
+  _timberPostGeo = new THREE.BoxGeometry(TIMBER_HALF_THICKNESS * 2.2, TIMBER_HEIGHT, 0.17);
+  _timberRailGeo = new THREE.CylinderGeometry(0.075, 0.075, TIMBER_HALF_LENGTH * 2, 6);
+  _timberRailGeo.rotateX(Math.PI / 2); // long axis -> Z
+  _timberMats = [0x7d5f3c, 0x8a6a44, 0x6d5436].map((c) => std(c, { roughness: 1 }));
+  for (const shared of [_timberPostGeo, _timberRailGeo, ..._timberMats]) shared.userData.shared = true;
+}
+
+export function buildTimberRail(rng) {
+  timberRailAssets();
+  const g = new THREE.Group();
+  const mat = _timberMats[(rng() * _timberMats.length) | 0];
+  for (const z of [-1.0, 1.0]) {
+    const post = new THREE.Mesh(_timberPostGeo, mat);
+    post.position.set(0, TIMBER_HEIGHT / 2, z);
+    post.rotation.y = (rng() - 0.5) * 0.08; // hand-set posts, not a machined fence
+    post.castShadow = post.receiveShadow = true;
+    g.add(post);
+  }
+  for (const y of [TIMBER_HEIGHT * 0.92, TIMBER_HEIGHT * 0.52]) {
+    const rail = new THREE.Mesh(_timberRailGeo, _timberMats[(rng() * _timberMats.length) | 0]);
+    rail.position.set(0, y + (rng() - 0.5) * 0.03, 0);
+    rail.castShadow = rail.receiveShadow = true;
+    g.add(rail);
+  }
+  return g;
+}
+
+// --- tunnel portals ---------------------------------------------------
+// A splineTunnel bore is two zero-thickness wall planes plus a flat roof
+// (see buildSplineTunnelRibbon), so its mouth ends in a razor edge hanging
+// in mid-air — the raw block-out look. These props are the facade that
+// closes it: a collar of real geometry sized to the bore, built SYMMETRIC
+// about local Z so one prop reads correctly at an entry mouth, an exit
+// mouth, and from inside the bore looking out. No rotY needed either end.
+//
+// Geometry is authored around a NOMINAL bore — PORTAL_SPAN half-width by
+// PORTAL_RISE tall, which is what both shipped tracks' tunnel bands use to
+// within a few percent. A point's scaleX/scaleY adapts it to a band whose
+// `offset`/`height` differ (scaleX 0.96 for a 4.4 m half-span, and so on).
+// Opening spans local X (lateral), thickness runs along local Z (the road),
+// matching the placePoint/orient convention every other prop here uses.
+//
+// The two variants are deliberately NOT a texture swap on one shape: an
+// American mountain portal is a battered rubble-granite arch and a Japanese
+// expressway portal is a flat precast concrete frame with a signboard, and
+// the silhouettes are what make them read as different places.
+export const PORTAL_SPAN = 4.6;  // opening half-width, metres
+export const PORTAL_RISE = 4.6;  // opening height, metres
+const PORTAL_OVERLAP = 0.08;     // how far the frame laps OVER the bore edge, so there is no seam
+
+// ---- American mountain: coursed granite, battered piers, segmental arch
+let _portalStoneMats = null, _portalUnitBox = null, _portalTrimMat = null;
+function mountainPortalAssets() {
+  if (_portalStoneMats) return;
+  // Same granite family as buildRockOutcrop so the portal reads as cut from
+  // the rock the road is already running through.
+  _portalStoneMats = [0x7c7b76, 0x6e6d69, 0x8a8880, 0x63625e, 0x77746c].map((c) => std(c, { roughness: 1 }));
+  _portalTrimMat = std(0x9d9a92, { roughness: 0.95 }); // dressed stone: coping + keystone
+  _portalUnitBox = new THREE.BoxGeometry(1, 1, 1);
+  for (const shared of [..._portalStoneMats, _portalTrimMat, _portalUnitBox]) shared.userData.shared = true;
+}
+
+export function buildTunnelPortalMountain(rng) {
+  mountainPortalAssets();
+  const g = new THREE.Group();
+  const S = PORTAL_SPAN, H = PORTAL_RISE;
+  const D = 1.3;                 // facade thickness along the road
+  const W = S + 2.5;             // outer half-width of the whole facade
+  const springY = H * 0.70;      // where the arch springs from the pier tops
+  const parapetY = H + 2.0;      // top of the masonry, before the coping
+
+  const block = (x, y, z, sx, sy, sz, mat) => {
+    const m = new THREE.Mesh(_portalUnitBox, mat ?? _portalStoneMats[(rng() * _portalStoneMats.length) | 0]);
+    m.position.set(x, y, z);
+    m.scale.set(sx, sy, sz);
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+    return m;
+  };
+
+  // Piers. Inner face laps over the bore wall by PORTAL_OVERLAP so the
+  // ribbon's razor edge is buried; outer face batters outward as it drops,
+  // which is what makes masonry look like it is carrying a load.
+  for (const sgn of [-1, 1]) {
+    let y = -1.6; // start below grade so uneven terrain can't reveal a floating base
+    while (y < springY) {
+      const h = 0.42 + rng() * 0.26;
+      const t = Math.min(1, (springY - y) / (springY + 1.6));       // 0 at base, 1 at top
+      const wide = 2.5 - t * 0.9 + rng() * 0.12;                     // batter
+      const xIn = sgn * (S - PORTAL_OVERLAP);
+      block(xIn + sgn * wide / 2, y + h / 2, (rng() - 0.5) * 0.06, wide, h, D + rng() * 0.1);
+      // a couple of proud rubble stones per course, outer face only
+      if (rng() < 0.55) {
+        const rs = 0.3 + rng() * 0.35;
+        block(xIn + sgn * (wide - rs * 0.3), y + h * (0.3 + rng() * 0.4), (rng() - 0.5) * (D * 0.8),
+              rs, rs * (0.7 + rng() * 0.5), rs * (0.8 + rng() * 0.7));
+      }
+      y += h;
+    }
+  }
+
+  // Segmental arch over the opening: an arc through (±S, springY) with its
+  // crown a little above the bore roof. Radius from the classic sagitta
+  // relation, so the voussoirs sit on a real circle rather than a guess.
+  const rise = (H + 0.35) - springY;
+  const R = (S * S + rise * rise) / (2 * rise);   // intrados radius
+  const cy = (H + 0.35) - R;                       // arc centre, well below the road
+  const t = 0.8;                                   // voussoir depth (radial)
+  const thetaMax = Math.asin(Math.min(1, S / R));
+  const n = 15;
+  for (let i = 0; i < n; i++) {
+    const th = -thetaMax + (2 * thetaMax) * ((i + 0.5) / n);
+    const isKey = Math.abs(th) < thetaMax / n;
+    const rc = R + t / 2;
+    const chord = (2 * thetaMax * R) / n * 1.12;   // slight overlap so no light leaks between stones
+    const m = block(rc * Math.sin(th), cy + rc * Math.cos(th), 0,
+                    chord, t * (isKey ? 1.45 : 1), D + 0.12,
+                    isKey ? _portalTrimMat : undefined);
+    m.rotation.z = -th;                            // local +Y points radially outward
+  }
+
+  // Spandrel: fill from the arch's extrados (or the pier tops beside it) up
+  // to the parapet, column by column, so there is never a gap to see sky
+  // through above the arch. Coursed in two courses for a masonry read.
+  const Ro = R + t;
+  const cols = 24;
+  for (let i = 0; i < cols; i++) {
+    const x0 = -W + (2 * W) * (i / cols), x1 = -W + (2 * W) * ((i + 1) / cols);
+    const xm = (x0 + x1) / 2, wCol = (x1 - x0) * 1.06;
+    const base = Math.abs(xm) < Ro ? Math.max(springY - 0.3, cy + Math.sqrt(Ro * Ro - xm * xm) - 0.12)
+                                   : springY - 0.3;
+    if (base >= parapetY) continue;
+    const mid = base + (parapetY - base) * (0.45 + rng() * 0.12);
+    block(xm, (base + mid) / 2, (rng() - 0.5) * 0.05, wCol, mid - base, D + rng() * 0.08);
+    block(xm, (mid + parapetY) / 2, (rng() - 0.5) * 0.05, wCol, parapetY - mid, D + rng() * 0.08);
+  }
+
+  // Dressed coping, overhanging both faces — the line that reads as "built"
+  // rather than "piled", and it caps the spandrel's ragged top.
+  block(0, parapetY + 0.19, 0, W * 2 + 0.5, 0.38, D + 0.55, _portalTrimMat);
+  // Buttress stones where the facade meets the rock cut, both sides of the
+  // road AND both sides of the facade (kept symmetric in Z on purpose).
+  for (const sgn of [-1, 1]) {
+    for (const zs of [-1, 1]) {
+      for (let i = 0; i < 3; i++) {
+        const s = 0.75 + rng() * 0.85;
+        block(sgn * (W - 0.2 - rng() * 0.6), s * 0.45 + i * 0.9, zs * (D * 0.5 + 0.2 + rng() * 0.5),
+              s * 1.3, s * (0.9 + rng() * 0.6), s * 1.2);
+      }
+    }
+  }
+  return g;
+}
+
+// ---- Japanese expressway: flat precast concrete frame, hood, signboard
+let _pcMat = null, _pcDarkMat = null, _pcTrimMat = null, _signMat = null, _portalUnitBox2 = null;
+function expresswayPortalAssets() {
+  if (_pcMat) return;
+  _pcMat = std(0xb6b9bd, { roughness: 0.82 });      // precast concrete
+  _pcDarkMat = std(0x86898d, { roughness: 0.85 });  // recesses / louvres
+  _pcTrimMat = std(0xd8dade, { roughness: 0.7 });   // painted band
+  _portalUnitBox2 = new THREE.BoxGeometry(1, 1, 1);
+  // Signboard: a dark plate with pale glyph blocks — deliberately abstract
+  // shapes at PS1 resolution, not real characters, in the same flat-region
+  // + grain idiom as every other texture here.
+  const signTex = canvasTexture(64, 24, (ctx, w, h) => {
+    ctx.fillStyle = "#1d3a2a"; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#e8eee9";
+    ctx.fillRect(2, 2, w - 4, 1); ctx.fillRect(2, h - 3, w - 4, 1);
+    for (let i = 0; i < 4; i++) {
+      const x = 6 + i * 13;
+      ctx.fillRect(x, 7, 9, 2);
+      ctx.fillRect(x + (i % 2 ? 1 : 3), 10, 2, 6);
+      ctx.fillRect(x + 5, 10, 2, 6);
+      if (i % 2 === 0) ctx.fillRect(x, 16, 9, 2);
+    }
+  }, 0.05);
+  _signMat = new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.6 });
+  for (const shared of [_pcMat, _pcDarkMat, _pcTrimMat, _signMat, _portalUnitBox2]) shared.userData.shared = true;
+}
+
+export function buildTunnelPortalExpressway(rng) {
+  expresswayPortalAssets();
+  const g = new THREE.Group();
+  const S = PORTAL_SPAN, H = PORTAL_RISE;
+  const D = 1.1;                 // frame thickness along the road
+  const W = S + 1.9;             // outer half-width
+  const headY = H + 1.9;         // top of the head beam
+
+  const slab = (x, y, z, sx, sy, sz, mat) => {
+    const m = new THREE.Mesh(_portalUnitBox2, mat ?? _pcMat);
+    m.position.set(x, y, z);
+    m.scale.set(sx, sy, sz);
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+    return m;
+  };
+
+  // Piers — flat slabs, no batter. Fluted with shallow ribs, which is what
+  // sells "precast panel" instead of "grey box" at speed.
+  for (const sgn of [-1, 1]) {
+    const xIn = sgn * (S - PORTAL_OVERLAP);
+    const wide = W - S + PORTAL_OVERLAP;
+    slab(xIn + sgn * wide / 2, (H + 1.6) / 2 - 0.8, 0, wide, H + 1.6 + 1.6, D);
+    for (let i = 0; i < 4; i++) {
+      const fx = xIn + sgn * (0.35 + i * (wide - 0.7) / 3);
+      slab(fx, H * 0.5, sgn * 0, 0.13, H * 1.02, D + 0.14, _pcDarkMat);
+    }
+    // kerb-height plinth, slightly proud
+    slab(xIn + sgn * wide / 2, 0.3, 0, wide + 0.12, 0.6, D + 0.22, _pcDarkMat);
+  }
+
+  // Head beam over the opening, and a projecting hood both sides of it —
+  // the deep shadow line under a hood is the single most recognisable thing
+  // about an expressway portal.
+  slab(0, (H - PORTAL_OVERLAP + headY) / 2, 0, W * 2, headY - H + PORTAL_OVERLAP, D);
+  slab(0, headY + 0.28, 0, W * 2 + 0.7, 0.56, D + 1.9);              // hood slab, symmetric in Z
+  slab(0, headY - 0.06, 0, W * 2 + 0.3, 0.16, D + 1.5, _pcTrimMat);  // painted band under the hood
+
+  // Ventilation louvres flanking the signboard.
+  for (const sgn of [-1, 1]) {
+    for (let i = 0; i < 5; i++) {
+      slab(sgn * (S * 0.62), H + 0.42 + i * 0.24, D / 2 + 0.03, S * 0.5, 0.13, 0.14, _pcDarkMat);
+      slab(sgn * (S * 0.62), H + 0.42 + i * 0.24, -D / 2 - 0.03, S * 0.5, 0.13, 0.14, _pcDarkMat);
+    }
+  }
+
+  // Signboard on both faces (symmetric prop), on a small standoff.
+  for (const zs of [-1, 1]) {
+    const sign = new THREE.Mesh(_portalUnitBox2, _signMat);
+    sign.position.set(0, H + 0.95, zs * (D / 2 + 0.09));
+    sign.scale.set(S * 1.05, 0.85, 0.12);
+    sign.castShadow = sign.receiveShadow = true;
+    g.add(sign);
+  }
+
+  // Clearance-bar chevrons at the opening's top corners: hazard marking
+  // where a truck would actually clip the head beam.
+  for (const sgn of [-1, 1]) {
+    for (const zs of [-1, 1]) {
+      slab(sgn * (S - 0.42), H - 0.5, zs * (D / 2 + 0.05), 0.7, 0.9, 0.1, _pcTrimMat);
+    }
+  }
+  return g;
+}
+
+// =====================================================================
+// Giza Desert Raceway — Old Town facade. A real 3D close-range building
+// wall for the Corkscrew's narrow cobbled streets: unlike buildBuilding's
+// plain flat-color box (fine at 15m+), this sits within a couple of metres
+// of the car through a claustrophobic chicane, so it needs actual surface
+// detail (punched windows, a door, a balcony ledge) or it reads as a grey
+// slab, not a street. Same construction convention as the mountain props
+// above: a couple of primitives in a Group, a small cached pool of
+// procedural textures (not one-per-instance — dozens of these line the
+// descent), std()-style grain via canvasTexture. Ground-origin (not
+// center-origin like buildBuilding) so a band/point needs no yOffset
+// gymnastics: y=0 is the base of the wall, matching barrier/apexKerb/
+// tireBarrier's convention. Long axis (the visible facade) faces local +Z,
+// same as buildBarrier — orient() only ever rotates around Y, so a facade
+// band's `side` should be picked so +Z already faces the street; add
+// rotY: Math.PI on the band if it comes out backwards.
+// =====================================================================
+// Origin sits AT the road-facing surface (not centered in the box, unlike
+// the thin barrier/apexKerb props above) — the wall is thick (a few
+// metres of real building depth), so centering it on the placement point
+// like a thin guardrail would bury half the building INSIDE the road.
+// thick is therefore just a nominal skin, not half the true depth.
+const OLDTOWN_HALF_THICKNESS = 0.12; // origin -> road-facing surface (computeWallProfile)
+const OLDTOWN_HALF_LENGTH = 2.9; // half-extent along the track (local Z)
+const OLDTOWN_DEPTH = 4.2; // full building depth, extending away from the road (+local X)
+const _oldTownFacadeTexCache = [];
+// Most of Cairo is plain concrete block / bare brick, not carved sandstone —
+// this pool is weighted that way on purpose (see the file-level note above
+// buildOldTownFacade): 5 of 6 cached variants are utilitarian unfinished
+// stock (poured concrete or bare red brick, flat parapet, rebar stubs on the
+// roofline, a stained streak below a sill, laundry line, AC box) and only 1
+// of 6 is the old warm-sandstone coursed-stone look — kept as the rare
+// old-quarter building it should be, not the default. Real 3D massing (not
+// just texture) is what actually reads as "domed/ornate" from a distance;
+// that vocabulary now lives ONLY in the Cairo skyline backdrop's one rare
+// mosque silhouette (see cairoSkyline registration) and isn't duplicated here.
+function oldTownFacadeTexture(rng) {
+  if (_oldTownFacadeTexCache.length < 6) {
+    const isOrnate = _oldTownFacadeTexCache.length === 5; // last slot = the rare one
+    const stories = 2 + ((rng() * 3) | 0);
+    const tex = canvasTexture(64, 96, (ctx, w, h) => {
+      const storyH = h / (stories + 1);
+      if (isOrnate) {
+        // the old warm-sandstone coursed-stone look, kept as the exception
+        const hue = 0.08 + rng() * 0.05;
+        const baseL = 0.5 + rng() * 0.18;
+        const base = new THREE.Color().setHSL(hue, 0.32, baseL);
+        ctx.fillStyle = `#${base.getHexString()}`;
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = "rgba(90,64,40,0.25)";
+        for (let y = 0; y < h; y += 6) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+        for (let s = 0; s < stories; s++) {
+          const y0 = h - (s + 1) * storyH;
+          for (let x = 6; x < w - 6; x += 14) {
+            if (Math.random() < 0.75) {
+              ctx.fillStyle = "rgba(40,32,26,0.85)";
+              ctx.fillRect(x, y0 + storyH * 0.25, 8, storyH * 0.5);
+              ctx.fillStyle = "rgba(210,190,150,0.7)";
+              ctx.fillRect(x - 1, y0 + storyH * 0.25 - 1, 10, 2);
+            }
+          }
+        }
+        ctx.fillStyle = "#5a3c22";
+        ctx.fillRect(w * 0.42, h - storyH * 0.9, w * 0.16, storyH * 0.9);
+        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.fillRect(w * 0.42, h - storyH * 0.9, w * 0.16, 3);
+      } else {
+        // plain unfinished concrete / bare brick — the ordinary building
+        // stock most of the street should be made of
+        const brick = rng() < 0.4;
+        const hue = brick ? 0.02 + rng() * 0.03 : 0.13 + rng() * 0.05; // bare red brick vs dusty grey/beige concrete
+        const sat = brick ? 0.35 + rng() * 0.1 : 0.05 + rng() * 0.08;
+        const baseL = brick ? 0.42 + rng() * 0.1 : 0.55 + rng() * 0.15;
+        const base = new THREE.Color().setHSL(hue, sat, baseL);
+        ctx.fillStyle = `#${base.getHexString()}`;
+        ctx.fillRect(0, 0, w, h);
+        // flat poured-slab lines between stories (no decorative coursing)
+        ctx.strokeStyle = "rgba(0,0,0,0.15)";
+        for (let s = 1; s <= stories; s++) {
+          const y = h - s * storyH;
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+        }
+        // plain square punched windows, irregular open/shuttered/AC-box mix
+        for (let s = 0; s < stories; s++) {
+          const y0 = h - (s + 1) * storyH;
+          for (let x = 5; x < w - 5; x += 12) {
+            const roll = Math.random();
+            if (roll < 0.62) {
+              ctx.fillStyle = "rgba(30,30,32,0.8)";
+              ctx.fillRect(x, y0 + storyH * 0.3, 7, storyH * 0.4);
+              if (Math.random() < 0.3) { // AC box under the sill
+                ctx.fillStyle = "rgba(200,200,195,0.8)";
+                ctx.fillRect(x - 1, y0 + storyH * 0.72, 9, storyH * 0.16);
+              }
+            }
+            // water-stain streak below the sill on a few windows
+            if (roll < 0.3) {
+              ctx.fillStyle = "rgba(20,15,10,0.12)";
+              ctx.fillRect(x + 1, y0 + storyH * 0.7, 5, storyH * 1.3);
+            }
+          }
+        }
+        // rebar stubs + an unfinished top course along the roofline — the
+        // "still building the next floor" look real Cairo streets have
+        ctx.strokeStyle = "rgba(60,55,50,0.55)";
+        for (let x = 4; x < w - 2; x += 7) {
+          if (Math.random() < 0.55) {
+            ctx.beginPath(); ctx.moveTo(x, 2); ctx.lineTo(x + (Math.random() - 0.5) * 2, -3); ctx.stroke();
+          }
+        }
+        // plain doorway, no shutter/frame styling
+        ctx.fillStyle = "rgba(35,30,28,0.9)";
+        ctx.fillRect(w * 0.4, h - storyH * 0.85, w * 0.18, storyH * 0.85);
+      }
+    });
+    _oldTownFacadeTexCache.push(tex);
+  }
+  return _oldTownFacadeTexCache[(rng() * _oldTownFacadeTexCache.length) | 0];
+}
+
+export function buildOldTownFacade(rng) {
+  const g = new THREE.Group();
+  const width = 3.6 + rng() * 2.2;
+  const depth = OLDTOWN_DEPTH;
+  const height = 6 + rng() * 4.5;
+  const mat = new THREE.MeshStandardMaterial({ map: oldTownFacadeTexture(rng), roughness: 0.9 });
+  const wallGeo = new THREE.BoxGeometry(depth, height, width);
+  wallGeo.translate(depth / 2, 0, 0); // shift so the near (road-facing) face sits at local x=0
+  const wall = new THREE.Mesh(wallGeo, mat);
+  wall.position.set(0, height / 2, 0);
+  wall.castShadow = wall.receiveShadow = true;
+  g.add(wall);
+  // a shallow balcony ledge partway up, overhanging the street from the
+  // front face — the detail that reads as "pressing in on the street" from
+  // the driver's seat, not just a wall. Kept modest (bare concrete/rust,
+  // not a carved ornament) and not on every building — most Cairo balconies
+  // are a plain slab with washing hung off it, not decoration.
+  if (rng() < 0.4) {
+    const ledgeY = height * (0.45 + rng() * 0.2);
+    const overhang = 0.9;
+    const ledgeMat = std(0x736b5e, { roughness: 0.95 });
+    const ledge = new THREE.Mesh(new THREE.BoxGeometry(overhang, 0.12, width * 0.85), ledgeMat);
+    ledge.position.set(-overhang / 2, ledgeY, 0);
+    ledge.castShadow = ledge.receiveShadow = true;
+    g.add(ledge);
+    // a couple of support posts under the ledge
+    for (const zs of [-0.3, 0.3]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, ledgeY * 0.3, 5), ledgeMat);
+      post.position.set(-overhang * 0.6, ledgeY - ledgeY * 0.15, width * zs);
+      g.add(post);
+    }
+  }
+  return g;
+}
+export { OLDTOWN_HALF_THICKNESS, OLDTOWN_HALF_LENGTH };
+
+// =====================================================================
+// Monaco Street Circuit — dense Belle Époque/Riviera apartment facade,
+// real 3D (not a cutout) for the same reason buildOldTownFacade is: it
+// lines the tight climbing streets within a couple of metres of the car.
+// Collidable like Old Town — the narrow street IS the wall here too.
+// Ordinary-stock rule applies the same way it did for Cairo: most of
+// Monaco's building stock is nice-but-plain cream/pastel stucco apartment
+// blocks with shutters and a plain iron rail, NOT the Casino itself — the
+// one genuinely grand building is placed once, by hand, as its own hero
+// prop (buildCasino below), not diluted into this pool.
+// =====================================================================
+export const RIVIERA_HALF_THICKNESS = 0.12; // origin -> road-facing surface (computeWallProfile)
+export const RIVIERA_HALF_LENGTH = 3.0; // half-extent along the track (local Z)
+const RIVIERA_DEPTH = 5.2; // full building depth, extending away from the road (+local X)
+const _rivieraFacadeTexCache = [];
+function rivieraFacadeTexture(rng) {
+  if (_rivieraFacadeTexCache.length < 6) {
+    const isGrand = _rivieraFacadeTexCache.length === 5; // last slot = the rare "grand hotel" exception
+    const stories = 3 + ((rng() * 3) | 0);
+    const tex = canvasTexture(64, 96, (ctx, w, h) => {
+      const storyH = h / (stories + 1);
+      // pastel Riviera stucco: cream, pale ochre, pale pink, pale blue-grey
+      const hues = [0.11, 0.09, 0.98, 0.58];
+      const hue = isGrand ? 0.12 : hues[(rng() * hues.length) | 0];
+      const sat = isGrand ? 0.22 : 0.14 + rng() * 0.1;
+      const baseL = isGrand ? 0.86 : 0.78 + rng() * 0.12;
+      const base = new THREE.Color().setHSL(hue < 0 ? hue + 1 : hue, sat, baseL);
+      ctx.fillStyle = `#${base.getHexString()}`;
+      ctx.fillRect(0, 0, w, h);
+      // stucco banding between stories
+      ctx.strokeStyle = "rgba(120,100,80,0.18)";
+      for (let s = 1; s <= stories; s++) {
+        const y = h - s * storyH;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+      // shuttered windows, each with a thin wrought-iron balcony rail
+      for (let s = 0; s < stories; s++) {
+        const y0 = h - (s + 1) * storyH;
+        for (let x = 5; x < w - 5; x += 11) {
+          if (Math.random() < 0.8) {
+            const shutterGreen = Math.random() < 0.5;
+            ctx.fillStyle = shutterGreen ? "rgba(64,90,68,0.85)" : "rgba(150,60,55,0.8)";
+            ctx.fillRect(x, y0 + storyH * 0.2, 7, storyH * 0.55);
+            ctx.fillStyle = "rgba(255,255,240,0.55)";
+            ctx.fillRect(x + 1, y0 + storyH * 0.25, 5, storyH * 0.45); // glass sliver between shutters
+            if (Math.random() < 0.7) {
+              ctx.strokeStyle = "rgba(40,40,42,0.6)";
+              ctx.beginPath();
+              ctx.moveTo(x - 1, y0 + storyH * 0.78);
+              ctx.lineTo(x + 8, y0 + storyH * 0.78);
+              ctx.stroke();
+              for (let bx = x - 1; bx <= x + 8; bx += 3) {
+                ctx.beginPath(); ctx.moveTo(bx, y0 + storyH * 0.78); ctx.lineTo(bx, y0 + storyH * 0.7); ctx.stroke();
+              }
+            }
+          }
+        }
+      }
+      if (isGrand) {
+        // gold cornice trim between every story on the grand hotel variant
+        ctx.strokeStyle = "rgba(190,155,70,0.5)";
+        for (let s = 1; s <= stories; s++) {
+          const y = h - s * storyH;
+          ctx.beginPath(); ctx.moveTo(0, y + 2); ctx.lineTo(w, y + 2); ctx.stroke();
+        }
+      }
+      // ground-floor awning stripe on a few (café/boutique frontage)
+      if (Math.random() < 0.4) {
+        ctx.fillStyle = Math.random() < 0.5 ? "rgba(170,55,50,0.85)" : "rgba(60,90,140,0.85)";
+        ctx.fillRect(w * 0.1, h - storyH * 0.5, w * 0.8, storyH * 0.25);
+      }
+      // plain entrance
+      ctx.fillStyle = "rgba(45,38,32,0.9)";
+      ctx.fillRect(w * 0.42, h - storyH * 0.85, w * 0.18, storyH * 0.85);
+    });
+    _rivieraFacadeTexCache.push(tex);
+  }
+  return _rivieraFacadeTexCache[(rng() * _rivieraFacadeTexCache.length) | 0];
+}
+
+export function buildRivieraFacade(rng) {
+  const g = new THREE.Group();
+  const width = 4.0 + rng() * 2.6;
+  const depth = RIVIERA_DEPTH;
+  const height = 9 + rng() * 8;
+  const mat = new THREE.MeshStandardMaterial({ map: rivieraFacadeTexture(rng), roughness: 0.85 });
+  const wallGeo = new THREE.BoxGeometry(depth, height, width);
+  wallGeo.translate(depth / 2, 0, 0); // shift so the near (road-facing) face sits at local x=0
+  const wall = new THREE.Mesh(wallGeo, mat);
+  wall.position.set(0, height / 2, 0);
+  wall.castShadow = wall.receiveShadow = true;
+  g.add(wall);
+  // shallow cantilevered balcony slab (thin iron-rail suggestion baked into
+  // the texture above) — the detail that presses the street in, same
+  // reasoning buildOldTownFacade uses for its own ledge
+  if (rng() < 0.6) {
+    const ledgeY = height * (0.35 + rng() * 0.35);
+    const overhang = 0.5;
+    const balconyW = width * 0.7;
+    const ledgeMat = std(0x9a9488, { roughness: 0.7 }); // darker than the pale wall so it actually reads against it
+    const ledge = new THREE.Mesh(new THREE.BoxGeometry(overhang, 0.08, balconyW), ledgeMat);
+    ledge.position.set(-overhang / 2, ledgeY, 0);
+    ledge.castShadow = ledge.receiveShadow = true;
+    g.add(ledge);
+    // two thin support brackets tying the ledge back to the wall — without
+    // these the ledge/rail reads as a plank floating off the facade
+    const bracketMat = std(0x3a352c, { roughness: 0.8 });
+    for (const bz of [-balconyW * 0.32, balconyW * 0.32]) {
+      const bracket = new THREE.Mesh(new THREE.BoxGeometry(overhang, 0.04, 0.04), bracketMat);
+      bracket.position.set(-overhang / 2, ledgeY - 0.05, bz);
+      g.add(bracket);
+    }
+    // a real (thin) wrought-iron rail, not a solid slab
+    const railMat = std(0x2c2f33, { metalness: 0.4, roughness: 0.5 });
+    const railH = 0.75;
+    const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.025, balconyW), railMat);
+    topRail.position.set(-overhang, ledgeY + railH, 0);
+    g.add(topRail);
+    const barCount = 6;
+    for (let bi = 0; bi < barCount; bi++) {
+      const bz = (bi / (barCount - 1) - 0.5) * balconyW * 0.94;
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.02, railH, 0.02), railMat);
+      bar.position.set(-overhang, ledgeY + railH / 2, bz);
+      g.add(bar);
+    }
+  }
+  // striped ground-floor awning over the entrance on some instances
+  if (rng() < 0.3) {
+    const awnMat = std(rng() < 0.5 ? 0xa8352c : 0x3a5a8a, { roughness: 0.85 });
+    const awning = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, width * 0.5), awnMat);
+    awning.position.set(-0.45, 2.6, 0);
+    awning.rotation.z = -0.15;
+    awning.castShadow = true;
+    g.add(awning);
+  }
+  return g;
+}
+
+// =====================================================================
+// Monaco Street Circuit — the Casino de Monte-Carlo. The ONE genuinely
+// grand building, placed exactly once as a `point` near the start/finish
+// (not banded — see the singular-landmark rule), promoted to real 3D
+// because it anchors the whole upper section and sits close enough to be
+// looked at, not just glimpsed. Twin corner cupolas + a colonnaded front +
+// a wide marble forecourt read as "the Casino" in silhouette even at
+// this low a poly count, same "silhouette over detail" approach buildSphinx
+// takes. NOT collidable — a backdrop monument set back off the racing line.
+// =====================================================================
+let _casinoMats = null;
+function casinoAssets() {
+  if (_casinoMats) return;
+  const stone = std(0xe9dfc4, { roughness: 0.85 });
+  const stoneShade = std(0xd6c9a4, { roughness: 0.88 });
+  const dome = std(0x4f7a72, { roughness: 0.6, metalness: 0.15 }); // verdigris copper patina
+  const gold = std(0xc7a04a, { roughness: 0.4, metalness: 0.5 });
+  const glass = std(0x9fc4d4, { roughness: 0.3, metalness: 0.1 });
+  const marble = std(0xf2ede0, { roughness: 0.6 });
+  for (const m of [stone, stoneShade, dome, gold, glass, marble]) m.userData.shared = true;
+  _casinoMats = { stone, stoneShade, dome, gold, glass, marble };
+}
+
+function casinoTower(g, x, z, scale, mats) {
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(1.9 * scale, 2.1 * scale, 7.5 * scale, 12), mats.stone);
+  base.position.set(x, 3.75 * scale, z);
+  base.castShadow = base.receiveShadow = true;
+  g.add(base);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(2.15 * scale, 4.2 * scale, 12), mats.dome);
+  cap.position.set(x, 7.5 * scale + 2.1 * scale, z);
+  cap.castShadow = true;
+  g.add(cap);
+  const finial = new THREE.Mesh(new THREE.SphereGeometry(0.22 * scale, 8, 6), mats.gold);
+  finial.position.set(x, 7.5 * scale + 4.2 * scale + 0.2 * scale, z);
+  g.add(finial);
+}
+
+export function buildCasino(rng) {
+  casinoAssets();
+  const mats = _casinoMats;
+  const g = new THREE.Group();
+  const scale = 0.94 + rng() * 0.12;
+
+  // marble forecourt/plaza platform
+  const plaza = new THREE.Mesh(new THREE.BoxGeometry(26 * scale, 0.5, 16 * scale), mats.marble);
+  plaza.position.set(2 * scale, 0.25, 0);
+  plaza.receiveShadow = plaza.castShadow = true;
+  g.add(plaza);
+
+  // main central block
+  const main = new THREE.Mesh(new THREE.BoxGeometry(10 * scale, 9 * scale, 15 * scale), mats.stone);
+  main.position.set(0, 4.5 * scale + 0.5, 0);
+  main.castShadow = main.receiveShadow = true;
+  g.add(main);
+
+  // colonnaded portico facing the road (-X)
+  const colCount = 7;
+  for (let i = 0; i < colCount; i++) {
+    const cz = (i / (colCount - 1) - 0.5) * 12.5 * scale;
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.32 * scale, 0.36 * scale, 6.4 * scale, 8), mats.marble);
+    col.position.set(-5.6 * scale, 3.2 * scale + 0.5, cz);
+    col.castShadow = true;
+    g.add(col);
+  }
+  const pediment = new THREE.Mesh(new THREE.BoxGeometry(1.4 * scale, 1.0 * scale, 14 * scale), mats.stoneShade);
+  pediment.position.set(-5.6 * scale, 6.9 * scale + 0.5, 0);
+  pediment.castShadow = true;
+  g.add(pediment);
+  // glazed entrance behind the colonnade
+  const glassWall = new THREE.Mesh(new THREE.BoxGeometry(0.3 * scale, 5.4 * scale, 13 * scale), mats.glass);
+  glassWall.position.set(-4.9 * scale, 3.0 * scale + 0.5, 0);
+  g.add(glassWall);
+
+  // central dome over the rotunda
+  const domeBase = new THREE.Mesh(new THREE.CylinderGeometry(3.4 * scale, 3.6 * scale, 2.6 * scale, 16), mats.stone);
+  domeBase.position.set(0, 9 * scale + 0.5 + 1.3 * scale, 0);
+  domeBase.castShadow = true;
+  g.add(domeBase);
+  const domeCap = new THREE.Mesh(new THREE.SphereGeometry(3.5 * scale, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), mats.dome);
+  domeCap.position.set(0, 9 * scale + 0.5 + 2.6 * scale, 0);
+  domeCap.castShadow = true;
+  g.add(domeCap);
+  const domeFinial = new THREE.Mesh(new THREE.SphereGeometry(0.3 * scale, 8, 6), mats.gold);
+  domeFinial.position.set(0, 9 * scale + 0.5 + 2.6 * scale + 2.6 * scale, 0);
+  g.add(domeFinial);
+
+  // twin corner cupola towers — the silhouette that actually reads as
+  // "the Casino" from a distance
+  casinoTower(g, 3 * scale, -8.6 * scale, scale, mats);
+  casinoTower(g, 3 * scale, 8.6 * scale, scale, mats);
+
+  return g;
+}
+
+// =====================================================================
+// Monaco Street Circuit — berthed yachts (motor superyacht / sailboat).
+// Real 3D, not cutouts: "yachts almost level with the racing surface" per
+// the brief means the chase camera sees these edge-on at close range along
+// the harbourfront. Banded repeatedly (a marina genuinely has many boats,
+// unlike the Casino) — see the singular-landmark-vs-plural-infrastructure
+// rule. NOT collidable — set back over the water beyond the harbour wall.
+// =====================================================================
+let _yachtMats = null;
+function yachtAssets() {
+  if (_yachtMats) return;
+  const hullWhite = std(0xf1f0e8, { roughness: 0.45, metalness: 0.05 });
+  const hullDark = std(0x263038, { roughness: 0.5 });
+  const deckTeak = std(0x8a6a44, { roughness: 0.8 });
+  const cabinGlass = std(0x3c5866, { roughness: 0.25, metalness: 0.2 });
+  const mast = std(0xd6d6d2, { roughness: 0.4, metalness: 0.3 });
+  const sailCloth = std(0xece8dc, { roughness: 0.9 });
+  for (const m of [hullWhite, hullDark, deckTeak, cabinGlass, mast, sailCloth]) m.userData.shared = true;
+  _yachtMats = { hullWhite, hullDark, deckTeak, cabinGlass, mast, sailCloth };
+}
+
+// Motor superyacht: long boxy hull, dark waterline stripe, stacked deck
+// levels tapering toward the bow, small flybridge/radar mast.
+function buildMotorYacht(rng, mats) {
+  const g = new THREE.Group();
+  const len = 9 + rng() * 10;
+  const beam = 2.2 + rng() * 1.1;
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(beam, 1.5, len), mats.hullWhite);
+  hull.position.set(0, 0.75, 0);
+  hull.castShadow = hull.receiveShadow = true;
+  g.add(hull);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(beam + 0.04, 0.28, len - 0.4), mats.hullDark);
+  stripe.position.set(0, 0.32, 0);
+  g.add(stripe);
+  const deck1 = new THREE.Mesh(new THREE.BoxGeometry(beam * 0.82, 1.2, len * 0.58), mats.hullWhite);
+  deck1.position.set(0, 1.5 + 0.6, -len * 0.05);
+  deck1.castShadow = true;
+  g.add(deck1);
+  const deck2 = new THREE.Mesh(new THREE.BoxGeometry(beam * 0.6, 0.95, len * 0.3), mats.cabinGlass);
+  deck2.position.set(0, 1.5 + 1.2 + 0.48, -len * 0.1);
+  deck2.castShadow = true;
+  g.add(deck2);
+  const mastPole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 2.2, 5), mats.mast);
+  mastPole.position.set(0, 1.5 + 1.2 + 0.95 + 1.1, len * 0.02);
+  g.add(mastPole);
+  return g;
+}
+
+// Sailboat: slim hull, single mast, boom + furled mainsail — the smaller
+// craft filling the pontoons between the superyachts.
+function buildSailboat(rng, mats) {
+  const g = new THREE.Group();
+  const len = 4.5 + rng() * 3.5;
+  const beam = 1.1 + rng() * 0.4;
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(beam, 0.7, len), mats.hullWhite);
+  hull.scale.set(1, 1, 1);
+  hull.position.set(0, 0.35, 0);
+  hull.castShadow = hull.receiveShadow = true;
+  g.add(hull);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(beam * 0.75, 0.1, len * 0.85), mats.deckTeak);
+  deck.position.set(0, 0.75, 0);
+  g.add(deck);
+  const mastH = 5 + rng() * 2.5;
+  const mastPole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, mastH, 6), mats.mast);
+  mastPole.position.set(0, 0.75 + mastH / 2, -len * 0.05);
+  g.add(mastPole);
+  const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, len * 0.35, 5), mats.mast);
+  boom.rotation.x = Math.PI / 2;
+  boom.position.set(0, 1.5, -len * 0.05 + len * 0.17);
+  g.add(boom);
+  const furled = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, mastH * 0.85, 5), mats.sailCloth);
+  furled.position.set(0.09, 0.75 + mastH * 0.42, -len * 0.05);
+  g.add(furled);
+  return g;
+}
+
+export function buildYacht(rng) {
+  yachtAssets();
+  return rng() < 0.4 ? buildMotorYacht(rng, _yachtMats) : buildSailboat(rng, _yachtMats);
+}
+
+// =====================================================================
+// Ocean — a plain flat square placed as a `point` (see trackObjects.js's
+// OBJECT_TYPES), not derived from the track spline at all: drag it with the
+// same translate/scale gizmo any other point uses (Object tab -> Select),
+// no special-cased footprint math to fight. Lies flat via a geometry-baked
+// rotation (orient() owns obj.rotation for points, so rotating the object
+// itself here would just get overwritten) — scaleX resizes world-X width,
+// scaleY resizes world-Z depth (same PlaneGeometry + bake-flat convention
+// buildGroundGeometry's ground plane uses).
+// Colors are deliberately saturated and `toneMapped = false`: a muted
+// "realistic" blue read as near-black once the scene's ACES tone curve and
+// exposure got hold of it — this bypasses that entirely and always renders
+// exactly the specified color.
+//
+// Where the terrain actually pokes above the water is what decides where
+// foam breaks (trackObjects.js's bakeShoreTexture fills uShoreTex/uShoreMin/
+// uShoreSize right after placement — a tiny 1x1 placeholder here just keeps
+// the shader valid before that runs). A flat "sin(x)*sin(z)" sparkle pattern
+// LOOKS like a grid of dots sliding across the plane — it's the product of
+// two independent traveling waves, i.e. literally a moving 2D lattice — so
+// this reads shore proximity instead of trying to fake foam from noise.
+// =====================================================================
+const OCEAN_VERTEX_SHADER = `
+  uniform float uTime;
+  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+  vec2 waveDir1 = vec2(0.6, 0.8);
+  vec2 waveDir2 = vec2(-0.7, 0.4);
+  void main() {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    float k1 = 0.16, k2 = 0.24, s1 = 0.8, s2 = 1.1, a1 = 0.1, a2 = 0.06;
+    float ph1 = dot(world.xz, waveDir1) * k1 + uTime * s1;
+    float ph2 = dot(world.xz, waveDir2) * k2 + uTime * s2;
+    world.y += sin(ph1) * a1 + sin(ph2) * a2;
+    vec2 slope = cos(ph1) * a1 * k1 * waveDir1 + cos(ph2) * a2 * k2 * waveDir2;
+    vNormal = normalize(vec3(-slope.x, 1.0, -slope.y));
+    vWorldPos = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+const OCEAN_FRAGMENT_SHADER = `
+  uniform vec3 uDeep;
+  uniform vec3 uShallow;
+  uniform vec3 uFoam;
+  uniform float uTime;
+  uniform sampler2D uShoreTex;
+  uniform vec2 uShoreMin;
+  uniform vec2 uShoreSize;
+  uniform float uRangeMin;
+  uniform float uRangeMax;
+  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+  void main() {
+    // Baked ground height at this world XZ (same rule buildGroundGeometry's
+    // vertices use — see makeGroundSampler) vs. this fragment's own
+    // (wave-animated) water surface height. Ground above the water: no
+    // water here at all, let the real ground mesh underneath show through.
+    // Ground just below: the breaking-wave band. A slow wobble keeps the
+    // line from sitting dead still.
+    vec2 uv = (vWorldPos.xz - uShoreMin) / uShoreSize;
+    float groundY = texture2D(uShoreTex, uv).r * (uRangeMax - uRangeMin) + uRangeMin;
+    float wobble = sin(vWorldPos.x * 0.25 + vWorldPos.z * 0.2 + uTime * 1.6) * 0.12;
+    float depth = (vWorldPos.y - groundY) + wobble;
+    if (depth < -0.4) discard;
+    float foam = 1.0 - smoothstep(-0.4, 1.3, depth);
+
+    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+    float fresnel = pow(1.0 - clamp(dot(viewDir, vNormal), 0.0, 1.0), 2.5);
+    vec3 base = mix(uDeep, uShallow, fresnel * 0.5 + 0.15);
+    // Soft sun glint off the wave normal — a broad moving highlight (the
+    // wave normal itself is low-frequency, so this stays smooth, not speckled).
+    vec3 lightDir = normalize(vec3(0.4, 0.75, 0.3));
+    float spec = pow(max(dot(reflect(-lightDir, vNormal), viewDir), 0.0), 40.0);
+    vec3 color = mix(base, uFoam, clamp(foam, 0.0, 1.0)) + spec * 0.35;
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+// 1x1 "open water everywhere" placeholder — decodes to uRangeMin, i.e. no
+// foam/discard — used only in the instant before bakeShoreTexture replaces it.
+function placeholderShoreTexture() {
+  const tex = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+export function buildOcean() {
+  const size = 60, segs = 24;
+  const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+  geo.rotateX(-Math.PI / 2); // baked into the geometry — points' orient() owns obj.rotation
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uDeep: { value: new THREE.Color(0x155c78) },
+      uShallow: { value: new THREE.Color(0x49b8d1) },
+      uFoam: { value: new THREE.Color(0xf2fbfa) },
+      uShoreTex: { value: placeholderShoreTexture() },
+      uShoreMin: { value: new THREE.Vector2(0, 0) },
+      uShoreSize: { value: new THREE.Vector2(1, 1) },
+      uRangeMin: { value: -5 },
+      uRangeMax: { value: 25 },
+    },
+    vertexShader: OCEAN_VERTEX_SHADER,
+    fragmentShader: OCEAN_FRAGMENT_SHADER,
+    side: THREE.DoubleSide,
+  });
+  mat.toneMapped = false;
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.animatedWater = true;
+  return mesh;
+}
+
+// =====================================================================
+// Monaco Street Circuit — harbour crane. Sparse hero points along the
+// marina (cranes servicing the yachts/dry-dock the brief calls for), real
+// 3D because it's a tall close-range silhouette. NOT collidable.
+// =====================================================================
+let _craneMats = null;
+function craneAssets() {
+  if (_craneMats) return;
+  const yellow = std(0xd8a821, { roughness: 0.7, metalness: 0.2 });
+  const dark = std(0x2c2d2f, { roughness: 0.6, metalness: 0.3 });
+  for (const m of [yellow, dark]) m.userData.shared = true;
+  _craneMats = { yellow, dark };
+}
+
+export function buildHarbourCrane(rng) {
+  craneAssets();
+  const { yellow, dark } = _craneMats;
+  const g = new THREE.Group();
+  const h = 9 + rng() * 4;
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.6, 1.4), dark);
+  base.position.set(0, 0.3, 0);
+  base.castShadow = base.receiveShadow = true;
+  g.add(base);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, h, 6), yellow);
+  mast.position.set(0, h / 2 + 0.6, 0);
+  mast.castShadow = true;
+  g.add(mast);
+  // boom: base anchored at the mast top (geometry translated so its own
+  // origin sits at the near end, same convention as placeholders.js's limb()
+  // helper) then rotated to lean out — anchoring by the CENTER (as before)
+  // let the far half poke back through the mast while the near half fell
+  // short of it, reading as a boom disconnected from its own tower.
+  const boomLen = 6 + rng() * 3;
+  const boomGeo = new THREE.CylinderGeometry(0.14, 0.16, boomLen, 5);
+  boomGeo.translate(0, boomLen / 2, 0);
+  const boom = new THREE.Mesh(boomGeo, yellow);
+  boom.rotation.z = -(Math.PI / 2 - 0.35); // lean out over the water (+X)
+  boom.position.set(0, h + 0.6, 0);
+  boom.castShadow = true;
+  g.add(boom);
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), dark);
+  counter.position.set(-1.1, h + 0.6, 0);
+  counter.castShadow = true;
+  g.add(counter);
+  // a short strut bracing the counterweight back to the mast, so it doesn't
+  // read as a second unconnected floating box
+  const strut = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 0.12), dark);
+  strut.position.set(-0.55, h + 0.35, 0);
+  strut.rotation.z = 0.25;
+  g.add(strut);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), dark);
+  cab.position.set(0, h - 0.3, 0);
+  cab.castShadow = true;
+  g.add(cab);
+  return g;
+}
+
+// =====================================================================
+// Giza Desert Raceway — the Great Sphinx. A one-off hero landmark (placed
+// as a single `point`, not a band), promoted from a flat cutout to real 3D
+// on the same reasoning as buildMonkeyTree/tunnel portals: it sits close to
+// the road at "Sphinx Sweep" so the player actually looks at it through the
+// corner, not just glimpses a silhouette in passing — a billboard read as a
+// paper cutout at that range. Lying-lion pose: long body + tapered
+// forelegs reaching toward the road (-X, same "reach toward the track"
+// convention buildMonkeyTree uses for its leaning trunk), head + nemes
+// headdress at the far/raised end. NOT collidable (COLLIDABLE_BARRIER_TYPES)
+// — it's a backdrop monument set back beyond the runoff, not something the
+// car should be able to clip.
+let _sphinxMats = null;
+function sphinxAssets() {
+  if (_sphinxMats) return;
+  const stone = std(0xcbb08a, { roughness: 0.95 });
+  const shade = std(0xa88c68, { roughness: 0.95 }); // weathered/undercut faces
+  const dark = std(0x8a7154, { roughness: 1 }); // deep erosion / shadowed recesses
+  for (const m of [stone, shade, dark]) m.userData.shared = true;
+  _sphinxMats = { stone, shade, dark };
+}
+
+export function buildSphinx(rng) {
+  sphinxAssets();
+  const { stone, shade, dark } = _sphinxMats;
+  const g = new THREE.Group();
+  const scale = 0.92 + rng() * 0.16; // mild per-instance size variance even though this is a one-off
+
+  // stepped stone platform it "sits" on, eroded sand drifted against one side
+  const platform = new THREE.Mesh(new THREE.BoxGeometry(15.5 * scale, 0.7, 7.6 * scale), dark);
+  platform.position.set(0, 0.35, 0);
+  platform.receiveShadow = platform.castShadow = true;
+  g.add(platform);
+
+  // haunches (rear, tall) tapering down to the shoulders
+  const haunch = new THREE.Mesh(new THREE.BoxGeometry(3.6 * scale, 4.6 * scale, 6.2 * scale), stone);
+  haunch.position.set(4.6 * scale, 0.7 + 2.3 * scale, 0);
+  haunch.castShadow = haunch.receiveShadow = true;
+  g.add(haunch);
+
+  const shoulders = new THREE.Mesh(new THREE.BoxGeometry(3.2 * scale, 3.4 * scale, 5.6 * scale), shade);
+  shoulders.position.set(1.6 * scale, 0.7 + 1.9 * scale, 0);
+  shoulders.castShadow = shoulders.receiveShadow = true;
+  g.add(shoulders);
+
+  // long low torso running forward, narrowing toward the paws
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(5.2 * scale, 2.1 * scale, 4.4 * scale), stone);
+  torso.position.set(-2.0 * scale, 0.7 + 1.15 * scale, 0);
+  torso.castShadow = torso.receiveShadow = true;
+  g.add(torso);
+
+  // two extended forepaws reaching toward the road
+  for (const zs of [-1, 1]) {
+    const paw = new THREE.Mesh(new THREE.BoxGeometry(3.4 * scale, 1.15 * scale, 1.35 * scale), shade);
+    paw.position.set(-6.1 * scale, 0.7 + 0.65 * scale, zs * 1.3 * scale);
+    paw.castShadow = paw.receiveShadow = true;
+    g.add(paw);
+    // a rougher, eroded step at each paw's tip
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.7 * scale, 0.9 * scale, 1.5 * scale), dark);
+    tip.position.set(-7.9 * scale, 0.7 + 0.5 * scale, zs * 1.3 * scale);
+    tip.castShadow = tip.receiveShadow = true;
+    g.add(tip);
+  }
+
+  // head block, raised above the shoulders at the rear
+  const head = new THREE.Mesh(new THREE.BoxGeometry(2.0 * scale, 2.3 * scale, 2.5 * scale), shade);
+  head.position.set(5.4 * scale, 0.7 + 3.9 * scale + 1.15 * scale, 0);
+  head.castShadow = head.receiveShadow = true;
+  g.add(head);
+  // simplified brow/face slab, slightly forward and undercut
+  const face = new THREE.Mesh(new THREE.BoxGeometry(0.5 * scale, 1.6 * scale, 2.1 * scale), dark);
+  face.position.set(6.35 * scale, 0.7 + 3.9 * scale + 1.0 * scale, 0);
+  face.castShadow = face.receiveShadow = true;
+  g.add(face);
+
+  // nemes headdress: a wider flat-topped block over the head + two lappets
+  // (flat slabs) hanging down either side of the neck — the silhouette that
+  // actually reads as "sphinx" from a distance
+  const crown = new THREE.Mesh(new THREE.BoxGeometry(2.3 * scale, 1.0 * scale, 3.0 * scale), stone);
+  crown.position.set(5.2 * scale, 0.7 + 3.9 * scale + 2.55 * scale, 0);
+  crown.castShadow = crown.receiveShadow = true;
+  g.add(crown);
+  for (const zs of [-1, 1]) {
+    const lappet = new THREE.Mesh(new THREE.BoxGeometry(1.5 * scale, 2.0 * scale, 0.55 * scale), stone);
+    lappet.position.set(5.7 * scale, 0.7 + 3.9 * scale + 0.4 * scale, zs * 1.55 * scale);
+    lappet.rotation.z = zs * 0.06;
+    lappet.castShadow = lappet.receiveShadow = true;
+    g.add(lappet);
+  }
+
+  // wind-drifted sand dune banked against the flank, motivating why the
+  // platform's far side is half-buried — real erosion detail, not filler
+  const drift = new THREE.Mesh(new THREE.ConeGeometry(3.2 * scale, 1.6 * scale, 8, 1, true), dark);
+  drift.scale.set(1, 0.5, 1.6);
+  drift.position.set(3.4 * scale, 0.55, -4.6 * scale);
+  drift.rotation.x = Math.PI;
+  drift.castShadow = false; drift.receiveShadow = true;
+  g.add(drift);
+
+  return g;
+}
+
+// =====================================================================
+// Giza Desert Raceway — Old Town market stall. Promoted from a flat cutout
+// to real 3D on the same "too close to be 2D" reasoning as the Sphinx: it
+// sits right at the Corkscrew's barrier line, close enough for the chase
+// camera to see it edge-on. Small and cheap (a handful of boxes/cylinders),
+// shares one striped-awning material pool across instances the way
+// buildTireBarrier shares its tire materials. NOT collidable — it sits
+// recessed against the building line, not out in the car's path.
+let _stallAssets = null;
+function marketStallAssets() {
+  if (_stallAssets) return;
+  const postMat = std(0x5a4128, { roughness: 0.95 });
+  const counterMat = std(0x7a5a36, { roughness: 0.9 });
+  const awningRed = std(0xa8352c, { roughness: 0.85 });
+  const awningWhite = std(0xd8cdb8, { roughness: 0.85 });
+  const awningGold = std(0xc99a3a, { roughness: 0.85 });
+  const goodsMats = [0xc97a2e, 0x7a9a4a, 0xd4b23a, 0x9a3a2e, 0xc2c47a].map((c) => std(c, { roughness: 0.8 }));
+  for (const m of [postMat, counterMat, awningRed, awningWhite, awningGold, ...goodsMats]) m.userData.shared = true;
+  _stallAssets = { postMat, counterMat, awnings: [awningRed, awningWhite, awningGold], goodsMats };
+}
+
+export function buildMarketStall(rng) {
+  marketStallAssets();
+  const { postMat, counterMat, awnings, goodsMats } = _stallAssets;
+  const g = new THREE.Group();
+  const w = 2.6 + rng() * 0.8, depth = 1.1 + rng() * 0.3;
+
+  // two front support posts holding the awning out over the counter
+  for (const zs of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 2.25, 5), postMat);
+    post.position.set(depth * 0.42, 1.125, zs * (w / 2 - 0.1));
+    post.castShadow = true;
+    g.add(post);
+  }
+  // counter/table
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(depth * 0.85, 0.85, w), counterMat);
+  counter.position.set(0, 0.425, 0);
+  counter.castShadow = counter.receiveShadow = true;
+  g.add(counter);
+  // striped canvas awning, tilted, overhanging the street
+  const stripes = 5 + ((rng() * 3) | 0);
+  const awningGroup = new THREE.Group();
+  const stripeMat = awnings[(rng() * awnings.length) | 0];
+  const altMat = awnings[(rng() * awnings.length) | 0];
+  for (let i = 0; i < stripes; i++) {
+    const seg = new THREE.Mesh(
+      new THREE.BoxGeometry(depth * 1.35, 0.06, w / stripes),
+      i % 2 ? stripeMat : altMat
+    );
+    seg.position.set(0, 0, -w / 2 + (i + 0.5) * (w / stripes));
+    seg.castShadow = true;
+    awningGroup.add(seg);
+  }
+  awningGroup.position.set(depth * 0.55, 2.3, 0);
+  awningGroup.rotation.z = -0.16; // pitched down toward the street
+  g.add(awningGroup);
+  // goods heaped on the counter — small produce-stall clutter, cheap
+  // spheres/boxes so a whole street of these stays low-poly
+  const goodsCount = 5 + ((rng() * 5) | 0);
+  for (let i = 0; i < goodsCount; i++) {
+    const mat = goodsMats[(rng() * goodsMats.length) | 0];
+    const r = 0.08 + rng() * 0.07;
+    const item = new THREE.Mesh(new THREE.SphereGeometry(r, 6, 5), mat);
+    item.position.set(
+      depth * (0.15 + rng() * 0.3),
+      0.85 + r * 0.8,
+      -w / 2 + 0.15 + rng() * (w - 0.3)
+    );
+    item.castShadow = true;
+    g.add(item);
   }
   return g;
 }

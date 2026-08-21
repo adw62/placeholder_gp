@@ -53,8 +53,12 @@ export const CONFIG = {
     maxYawRate: 3.5,        // safety cap only — the tire model self-limits
 
     // ---- assists & aero: the GT1/2 "arcade sim" layer (see physics.js) ----
-    steerAssist: 0.5,       // 0..1 grip-optimal steering limiter: full stick = peak front grip + subtle auto-countersteer
-    stabilityAssist: 0.1,   // 0..1 fills rear post-peak falloff: slides start but don't snap into spins
+    steerAssist: 0.3,        // 0..1 grip-optimal steering limiter: lowered from 0.5 so full-lock
+                              // steering can actually push the front past its own peak slip angle —
+                              // at 0.5 the assist kept the front glued near-optimal, so only the
+                              // rear ever broke away (oversteer, not a 4-wheel slide)
+    stabilityAssist: 0.25,   // 0..1 fills rear post-peak falloff: raised from 0.1 so a slide catches
+                              // well before it snaps into an unrecoverable spin
     downforce: 0.02,        // extra axle load = downforce·v² (per-mass units); plants the car at speed
     aeroBalance: 0.5,       // fraction of downforce on the front axle
 
@@ -64,8 +68,15 @@ export const CONFIG = {
     // later and keeps almost all of it — the default limit behavior is a
     // progressive push, and the rear only comes around when provoked
     // (power, handbrake, big weight transfer), then comes back.
-    mu: 0.85,                        // peak friction (lateral limit ≈ μ·g ≈ 8.3 m/s²)
-    tireFront: { B: 11, C: 1.5 },    // peak ≈ 9.0°, far tail keeps 71% grip
+    // tireFront.C brought down toward tireRear.C so the front, once it does
+    // break away (see steerAssist above), stays catchable instead of washing
+    // out into a hard plow — both axles now fall off the same forgiving way,
+    // which is what reads as a controllable 4-wheel slide instead of
+    // understeer-then-spin.
+    mu: 0.78,                        // peak friction (lateral limit ≈ μ·g ≈ 7.7 m/s²) — lowered a
+                                      // notch so the grip envelope is easier to exceed at racing
+                                      // speeds, inviting the slide sooner on both axles
+    tireFront: { B: 11, C: 1.3 },    // peak ≈ 9.0°, far tail keeps 89% grip (was 71% at C 1.5)
     tireRear:  { B: 22, C: 1.25 },   // peak ≈ 8.1°, far tail keeps 92% grip — C is THE slide-feedback knob
     lowSpeedGripBoost: 0.1, // extra μ at standstill (tires bite when slow)
     lowSpeedGripFade: 15.5, // m/s at which the low-speed boost is fully gone

@@ -23,15 +23,17 @@ const GROUND_FLUSH_MARGIN = 1.5; // beyond the road edge, still held flush befor
 const GROUND_DROP = 0.08; // sit slightly below the road ribbon, never through it
 const HEIGHT_SAMPLE_STRIDE = 2;
 
-function buildGroundGeometry(track, center) {
-  const geo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, GROUND_SEGS, GROUND_SEGS);
-  const pos = geo.attributes.position;
+// Same "nearest track sample, blend to flat past FALLOFF" rule the ground
+// mesh itself is built from, factored out so anything else that needs to
+// know "how high is the ground at this world point" (buildOcean's shoreline
+// bake, see trackObjects.js) reads the IDENTICAL height a ground vertex
+// would get — no separate approximation that could drift from what's
+// actually rendered.
+export function makeGroundSampler(track) {
   const heightSamples = [];
   for (let i = 0; i < track.samples.length; i += HEIGHT_SAMPLE_STRIDE) heightSamples.push(track.samples[i]);
-  const flushDist = track.wallDist + GROUND_FLUSH_MARGIN;
-  for (let i = 0; i < pos.count; i++) {
-    // Plane is rotated -90deg about X to lie flat: local z -> world height, local (x,y) -> world (x,z).
-    const wx = pos.getX(i) + center.x, wz = -pos.getY(i) + center.z;
+  const flushDist = (track.wallDist ?? 0) + GROUND_FLUSH_MARGIN;
+  return (wx, wz) => {
     let bestD2 = Infinity, bestY = 0;
     for (const s of heightSamples) {
       const dx = wx - s.p.x, dz = wz - s.p.z;
@@ -40,7 +42,18 @@ function buildGroundGeometry(track, center) {
     }
     const d = Math.sqrt(bestD2);
     const t = d <= flushDist ? 1 : THREE.MathUtils.clamp(1 - (d - flushDist) / GROUND_FALLOFF, 0, 1);
-    pos.setZ(i, bestY * t - GROUND_DROP * t);
+    return bestY * t - GROUND_DROP * t;
+  };
+}
+
+function buildGroundGeometry(track, center) {
+  const geo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, GROUND_SEGS, GROUND_SEGS);
+  const pos = geo.attributes.position;
+  const sample = makeGroundSampler(track);
+  for (let i = 0; i < pos.count; i++) {
+    // Plane is rotated -90deg about X to lie flat: local z -> world height, local (x,y) -> world (x,z).
+    const wx = pos.getX(i) + center.x, wz = -pos.getY(i) + center.z;
+    pos.setZ(i, sample(wx, wz));
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
