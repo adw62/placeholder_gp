@@ -5,12 +5,16 @@
 // =====================================================================
 
 import * as THREE from "three";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { AfterimagePass } from "three/addons/postprocessing/AfterimagePass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { CONFIG } from "../../shared/src/config.js";
 import { TRACKS } from "./tracks.js";
 import { loadLevels } from "./levels.js";
 import { buildTrack } from "../../shared/src/track.js";
 import { buildEnvironment, applyTheme, mulberry32, hashSeed, sunDirection, buildSunVisual, applySunVisual, buildSkyDome, applySkyDome, DEFAULT_SUN_VISUAL_DISTANCE } from "../../shared/src/environment.js";
-import { buildAllTrackObjects } from "../../shared/src/trackObjects.js";
+import { buildAllTrackObjects, updateOceanTime } from "../../shared/src/trackObjects.js";
 import { CarPhysics, collideWithBarriers, barrierPenetration, contactPoint } from "./physics.js";
 import { AIRacer } from "./ai.js";
 import { Effects } from "./effects.js";
@@ -78,6 +82,21 @@ scene.add(sunVisual);
 const skyDome = buildSkyDome();
 scene.add(skyDome);
 
+// Light motion-blur postprocessing (replaces the old radial speed-line
+// overlay): AfterimagePass blends a decayed copy of the previous frame back
+// in, which reads as trailing/smear on anything moving — cheap at the PS1
+// internal resolution this renders at. OutputPass re-applies tone mapping +
+// color-space conversion, which a raw renderer.render(scene, camera) call
+// gets for free but an intermediate render-target pass doesn't — it has to
+// be the LAST pass in the chain. damp is retuned every frame in tick() (see
+// updateMotionBlur) from player speed/boost state; CONFIG.juice.motionBlur.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const afterimagePass = new AfterimagePass(0); // starts at 0 = no blur until updateMotionBlur says otherwise
+composer.addPass(afterimagePass);
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
+
 // PS1 internal resolution: render at CONFIG.render.internalHeight (~240p),
 // stretch the canvas over the window with nearest-neighbor upscaling. The
 // particle shader sizes points in framebuffer pixels tuned at full res, so
@@ -92,6 +111,7 @@ function applyRenderSize() {
   const iw = Math.max(16, Math.round(ih * (w / h)));
   renderer.setPixelRatio(1);
   renderer.setSize(iw, ih, false); // false: leave CSS size to us
+  composer.setSize(iw, ih);
   const cv = renderer.domElement;
   cv.style.width = w + "px";
   cv.style.height = h + "px";
@@ -166,6 +186,7 @@ function readInput() {
     brake: keys.KeyS || keys.ArrowDown ? 1 : 0,
     steer: (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0),
     handbrake: keys.Space ? 1 : 0,
+    boostHeld: keys.ShiftLeft || keys.ShiftRight ? 1 : 0,
   };
 }
 
@@ -186,7 +207,7 @@ function handleKeyPress(code) {
 }
 
 // Camera orbit / zoom (chase modes only)
-const camState = { mode: 0, yaw: 0, pitch: 0.26, zoom: 1, dragging: false, lastX: 0, lastY: 0, fov: CONFIG.camera.baseFov };
+const camState = { mode: 0, yaw: 0, pitch: 0.26, zoom: 1, dragging: false, lastX: 0, lastY: 0, fov: CONFIG.camera.baseFov, hitFovKick: 0 };
 renderer.domElement.addEventListener("mousedown", (e) => {
   camState.dragging = true;
   camState.lastX = e.clientX;
@@ -370,7 +391,7 @@ function startRace(def) {
   applySkyDome(skyDome, def.theme);
   const env = buildEnvironment(def, track, rng);
   scene.add(env);
-  const { group: objects, billboards } = buildAllTrackObjects(def, track, rng);
+  const { group: objects, billboards, waterMeshes } = buildAllTrackObjects(def, track, rng);
   scene.add(objects);
   const effects = new Effects(scene);
   effects.setPixelScale(sizeState.ih / Math.max(1, sizeState.h));
@@ -384,7 +405,7 @@ function startRace(def) {
 
   // --- draw-call batching (batching.js): merge static props into one mesh
   // per 70 m chunk. The editor keeps individual meshes; only the race merges. ---
-  const exclude = new Set(billboards);
+  const exclude = new Set([...billboards, ...waterMeshes]);
   const staticBatches = [];
   for (const g of [env, objects]) {
     const merged = mergeStaticGroup(g, exclude);
@@ -464,6 +485,20 @@ function startRace(def) {
   const minimapDots = ai.map((a) => ({ x: 0, z: 0, color: "#" + a.color.toString(16).padStart(6, "0"), big: false }));
   minimapDots.push({ x: 0, z: 0, color: "#ffffff", big: true });
 
+  // Shared per-frame car list for AI lane choice + following distance
+  // (CONFIG.ai.lanes/awareness): one entry per racer (player + every AI),
+  // refreshed in place each frame and handed whole to every AIRacer.update()
+  // — `ref` is how a racer recognizes and skips its own entry (and, being
+  // null only for the player, how pickLane tells "compare by committed
+  // lane" from "compare by actual position"); arc/lat are each car's own
+  // last track-relative position, lane its currently-committed line
+  // (player's is unused but kept for shape uniformity). Built once here
+  // rather than allocated fresh every frame.
+  const carDescs = [
+    { ref: null, x: 0, z: 0, heading: 0, speed: 0, arc: 0, lat: 0, lane: 0 },
+    ...ai.map((a) => ({ ref: a, x: 0, z: 0, heading: 0, speed: 0, arc: 0, lat: 0, lane: 0 })),
+  ];
+
   // Warm the GPU now, not mid-race: three.js compiles each material's
   // shader program and uploads each texture the first time its object is
   // actually rendered — so the first skid mark, the first crowd row to
@@ -482,7 +517,7 @@ function startRace(def) {
   }
 
   race = {
-    def, track, env, objects, billboards, effects, player, ai, minimapDots,
+    def, track, env, objects, billboards, waterMeshes, effects, player, ai, minimapDots, carDescs,
     staticBatches, bakeFrames: 0,
     state: "countdown", countT: 3.999, beeped: 4,
     raceT: 0, lapStartT: 0, lapsDone: 0, cp: 0, lapTimes: [],
@@ -490,6 +525,9 @@ function startRace(def) {
     driftChain: 0, driftEnd: 0, driftTotal: 0,
     wrongWayT: 0, finishT: 0, finishedShown: false, finalPos: 4,
     newRecord: false,
+    boostMeter: CONFIG.boost.startAmount, boostWasFull: false,
+    boosting: false, wasBoosting: false,
+    hitStopT: 0,
   };
 
   posePlayerRig(0);
@@ -755,6 +793,13 @@ function updateCamera(dt) {
     camera.position.z += (Math.random() - 0.5) * shake;
   }
 
+  // Extra fov, on top of the existing speed curve: a sustained widen while
+  // boosting (rush of speed) plus a decaying punch fired once per big impact
+  // (see step()'s hit-stop trigger) — both additive so they can stack.
+  const HS = CONFIG.juice.hitStop;
+  camState.hitFovKick *= Math.exp(-dt * HS.fovKickDecay);
+  targetFov += (race.boosting ? CONFIG.boost.fovKick : 0) + camState.hitFovKick;
+
   camState.fov += (targetFov - camState.fov) * (1 - Math.exp(-dt * 4));
   if (Math.abs(camera.fov - camState.fov) > 0.05) {
     camera.fov = camState.fov;
@@ -796,6 +841,16 @@ function obbOverlap(ax, az, aHeading, bx, bz, bHeading, hl, hw) {
   return { overlap: minOverlap, nx, nz };
 }
 
+// Which side of a car (relative to its own heading) a direction points —
+// +1 right, -1 left. Used on car-vs-car contact to tell an AI's next lane
+// pick which way it just got pushed, so it actively steers into a new lane
+// away from whoever it hit instead of continuing to grind alongside it
+// (see AIRacer.bumped/bumpAvoidSign, consumed at the top of ai.js's update()).
+function sideSign(heading, dx, dz) {
+  const fx = Math.sin(heading), fz = Math.cos(heading);
+  return dx * fz - dz * fx >= 0 ? 1 : -1;
+}
+
 // Collision wireframe (G): the boxes track the same pos/heading the physics
 // just integrated, so a box edge resting on the wall fence means contact.
 // Called from the countdown path too — otherwise the boxes sit unwritten at
@@ -811,6 +866,8 @@ function updateCollisionDebug(r) {
 
 function step(now, dt) {
   const r = race;
+
+  updateOceanTime(r.waterMeshes, now);
 
   // Draw-distance culling (PS1 pop-in, per chunk/billboard): everything
   // past CONFIG.render.drawDistance is skipped — usually hidden by fog,
@@ -875,7 +932,26 @@ function step(now, dt) {
   }
 
   r.raceT += dt;
-  const inp = r.state === "finished" ? { throttle: 0, brake: 1, steer: 0, handbrake: 0 } : input;
+  const inp = r.state === "finished" ? { throttle: 0, brake: 1, steer: 0, handbrake: 0, boostHeld: 0 } : input;
+
+  // ---------- boost (nitro-style meter, see CONFIG.boost) ----------
+  const B = CONFIG.boost;
+  r.wasBoosting = r.boosting;
+  r.boosting = r.state === "racing" && inp.boostHeld > 0 && r.boostMeter > B.minToStart;
+  if (r.boosting) {
+    inp.throttle = 1; // nitro forces full throttle — a tap of the key is enough
+    inp.boost = 1;
+    r.boostMeter = Math.max(0, r.boostMeter - B.drainRate * dt);
+    if (!r.wasBoosting) audio.boostStart();
+  } else {
+    inp.boost = 0;
+  }
+
+  // ---------- hit-stop (impact "juice": briefly slows the sim after a big
+  // hit — see the impact block below for the trigger) ----------
+  const HS = CONFIG.juice.hitStop;
+  r.hitStopT = Math.max(0, r.hitStopT - dt);
+  const simDt = r.hitStopT > 0 ? dt * HS.timeScale : dt;
 
   // ---------- surface + physics (substepped) ----------
   // queryProjected (not the raw nearest-sample query): continuous closest-
@@ -898,8 +974,8 @@ function step(now, dt) {
     : { grip: off.grip, drag: off.drag, power: off.power, slope };
 
   // The tire model is a stiff ODE — integrate at ≥240 Hz for stability.
-  const steps = Math.max(1, Math.ceil(dt / (1 / 240)));
-  const h = dt / steps;
+  const steps = Math.max(1, Math.ceil(simDt / (1 / 240)));
+  const h = simDt / steps;
   let impact = 0;
   let impNx = 0, impNz = 0; // outward normal of the barrier segment that was hit
   for (let i = 0; i < steps; i++) {
@@ -920,6 +996,12 @@ function step(now, dt) {
     const cp = contactPoint(r.player.pos, r.player.heading, impNx, impNz);
     r.effects.impact(cp.x, groundState.y, cp.z, impNx, impNz, impact);
     damageCarAt(playerRig.damageMeshes, r.player.pos, groundState.y + playerRig.lift, r.player.heading, { x: impNx, z: impNz }, impact);
+    // A real hit (not a graze) gets a beat of slow motion + a camera fov
+    // punch — see the hitStopT/simDt setup above and updateCamera's kick.
+    if (impact > HS.threshold) {
+      r.hitStopT = HS.duration;
+      camState.hitFovKick = HS.fovKick;
+    }
   }
 
   // ---------- checkpoints & laps ----------
@@ -956,10 +1038,39 @@ function step(now, dt) {
   const RB = CONFIG.ai.rubberBand;
   const BUMP = CONFIG.ai.bump;
   const HL = CONFIG.physics.carHalfLength * CONFIG.carScale, HW = CONFIG.physics.carHalfWidth * CONFIG.carScale;
-  for (const a of r.ai) {
+
+  // Refresh the shared car snapshot (see carDescs' declaration above) before
+  // anyone reads it this frame — player entry uses this frame's
+  // already-updated position/arc (q is still the player's own final
+  // queryProjected result from above); each AI's own entry is last frame's
+  // (updated below as that racer's a.update() runs), which is fine since
+  // it's only ever read by the *other* racers.
+  r.carDescs[0].x = r.player.pos.x; r.carDescs[0].z = r.player.pos.z;
+  r.carDescs[0].heading = r.player.heading; r.carDescs[0].speed = r.player.speed;
+  r.carDescs[0].arc = q.arc; r.carDescs[0].lat = q.lateral;
+
+  for (let i = 0; i < r.ai.length; i++) {
+    const a = r.ai[i];
     if (a.lap >= r.def.laps) a.finished = true;
     const rubber = clamp(1 + (playerScore - a.progress) * r.track.length * RB.gain, RB.min, RB.max);
-    a.update(dt, rubber);
+    a.update(simDt, rubber, r.carDescs);
+    // Update this AI's own entry (index i+1: carDescs[0] is the player) now
+    // that its position for this frame is final, so the next AI in the loop
+    // (and next frame's player-relative checks) see it.
+    const desc = r.carDescs[i + 1];
+    desc.x = a.car.pos.x; desc.z = a.car.pos.z; desc.heading = a.car.heading; desc.speed = a.car.speed;
+    desc.arc = a.arc; desc.lat = a.lateral;
+    desc.lane = a.laneTarget;
+
+    if (a.boosting) {
+      const bfx = Math.sin(a.car.heading), bfz = Math.cos(a.car.heading);
+      const tailBack = CONFIG.physics.carHalfLength * CONFIG.carScale * 0.9;
+      r.effects.boostFlame(
+        simDt,
+        a.car.pos.x - bfx * tailBack, a.groundY + 0.18, a.car.pos.z - bfz * tailBack,
+        bfx, bfz, a
+      );
+    }
 
     // AI-vs-wall: cars really hit barriers (real CarPhysics), so give them the
     // same damage/effects treatment as the player's own wall hits — but faded
@@ -1021,6 +1132,58 @@ function step(now, dt) {
         // opposite sign from AI.
         damageCarAt(playerRig.damageMeshes, r.player.pos, groundState.y + playerRig.lift, r.player.heading, { x: -nx, z: -nz }, 3);
         damageCarAt(a.damageMeshes, a.pos, a.groundY + a.lift, a.car.heading, { x: nx, z: nz }, 3);
+        // Tell the AI which way it just got shoved (n points AI->player, so
+        // -n is the AI's own escape direction) so it actively picks a new
+        // lane away from the player next update() instead of continuing to
+        // grind alongside — see AIRacer.bumped/bumpAvoidSign.
+        a.bumped = true;
+        a.bumpAvoidSign = sideSign(a.car.heading, -nx, -nz);
+        r.bumpCd = 0.5;
+      }
+    }
+  }
+
+  // ---------- AI-vs-AI bump: same real-footprint overlap correction as the
+  // player-vs-AI case above, but split evenly (50/50) since neither side is
+  // the player — cars rub and slide apart instead of overlapping or
+  // bouncing. Shares r.bumpCd with the player-vs-AI hits so a pile-up still
+  // only machine-guns the mix once, not per pair.
+  //
+  // obbOverlap(a, b) returns its normal pointing B -> A (see its own
+  // comment/the player-vs-AI call above, which does player += n / ai -= n
+  // for the same reason): here a is the "A" param and b is "B", so a must
+  // move along +n (away from b) and b along -n (away from a). Getting this
+  // backwards doesn't just fail to separate the cars, it pulls them
+  // further into each other every frame — the SAT axis then flips
+  // unpredictably as the fake overlap grows, which reads as chaotic jitter.
+  for (let i = 0; i < r.ai.length; i++) {
+    for (let j = i + 1; j < r.ai.length; j++) {
+      const a = r.ai[i], b = r.ai[j];
+      const hit = obbOverlap(a.car.pos.x, a.car.pos.z, a.car.heading, b.car.pos.x, b.car.pos.z, b.car.heading, HL, HW);
+      if (!hit) continue;
+      const { overlap, nx, nz } = hit; // b -> a
+      a.car.pos.x += nx * overlap * 0.5;
+      a.car.pos.z += nz * overlap * 0.5;
+      b.car.pos.x -= nx * overlap * 0.5;
+      b.car.pos.z -= nz * overlap * 0.5;
+      if (r.bumpCd <= 0) {
+        // Neither car here is the player, so — same reasoning as the
+        // AI-vs-wall block above — fade shake/audio by distance from the
+        // camera instead of hitting the player at full strength for a
+        // collision that might be happening across the track.
+        const bcp = contactPoint(a.car.pos, a.car.heading, nx, nz);
+        const dist = Math.hypot(bcp.x - camera.position.x, bcp.z - camera.position.z);
+        const shake = clamp(1 - dist / 18, 0, 1) * 0.25;
+        r.effects.impact(bcp.x, a.groundY, bcp.z, nx, nz, 2.5, a.color, shake);
+        const gain = 0.3 * clamp(1 - dist / 45, 0, 1);
+        if (gain > 0.02) audio.thud(gain);
+        damageCarAt(a.damageMeshes, a.pos, a.groundY + a.lift, a.car.heading, { x: -nx, z: -nz }, 2.5);
+        damageCarAt(b.damageMeshes, b.pos, b.groundY + b.lift, b.car.heading, { x: nx, z: nz }, 2.5);
+        // Same "actively move away from whoever you hit" signal as the
+        // player-vs-AI block above — a moved along +n, b along -n, so
+        // those are each one's own escape direction.
+        a.bumped = true; a.bumpAvoidSign = sideSign(a.car.heading, nx, nz);
+        b.bumped = true; b.bumpAvoidSign = sideSign(b.car.heading, -nx, -nz);
         r.bumpCd = 0.5;
       }
     }
@@ -1033,8 +1196,23 @@ function step(now, dt) {
   } else if (r.driftChain > 0) {
     r.driftEnd -= dt;
     if (r.driftEnd <= 0) {
-      r.driftTotal += Math.round(r.driftChain);
+      const earned = Math.round(r.driftChain);
+      r.driftTotal += earned;
       r.driftChain = 0;
+      if (earned >= 8) hud.popDrift(earned);
+    }
+  }
+
+  // ---------- boost meter fill: driving expressively earns it back ----------
+  // (lags the input that produced it by one frame, same as every other
+  // r.player.drifting/wheelspin consumer below — the physics substep loop
+  // above already refreshed both this frame.)
+  if (r.state === "racing" && !r.boosting && onRoad) {
+    const gain = (r.player.drifting ? B.fillDriftRate : 0) + (r.player.wheelspin > 0.3 ? B.fillBurnoutRate * r.player.wheelspin : 0);
+    if (gain > 0) {
+      const wasFull = r.boostMeter >= B.max;
+      r.boostMeter = Math.min(B.max, r.boostMeter + gain * dt);
+      if (!wasFull && r.boostMeter >= B.max) audio.beep(880, 0.09, 0.16, "triangle");
     }
   }
 
@@ -1045,7 +1223,7 @@ function step(now, dt) {
   hud.setWrongWay(r.wrongWayT > 1);
 
   // ---------- visuals / effects / audio ----------
-  posePlayerRig(dt);
+  posePlayerRig(simDt);
 
   updateCollisionDebug(r);
 
@@ -1062,7 +1240,7 @@ function step(now, dt) {
   // it, independent of drivetrain, so it needs its own marking/smoke trigger
   // instead of riding on the wheelspin-driven ones above.
   const frontSlideMark = r.player.frontPush > 0.3 && onRoad;
-  r.effects.update(dt, {
+  r.effects.update(simDt, {
     rearSlideMark,
     driveSpinMark,
     frontSlideMark,
@@ -1077,6 +1255,15 @@ function step(now, dt) {
     frontAnchors: playerRig.frontAnchors,
     groundYAt: groundHeightAt,
   });
+  if (r.boosting) {
+    const bfx = Math.sin(r.player.heading), bfz = Math.cos(r.player.heading);
+    const tailBack = CONFIG.physics.carHalfLength * CONFIG.carScale * 0.9;
+    r.effects.boostFlame(
+      simDt,
+      r.player.pos.x - bfx * tailBack, groundState.y + 0.18, r.player.pos.z - bfz * tailBack,
+      bfx, bfz
+    );
+  }
 
   const { gear, rpm } = gearAndRpm(r.player.vLong, inp.throttle);
   audio.setEngine(Math.min(1, rpm + r.player.wheelspin * 0.3), inp.throttle); // spin flares the revs
@@ -1119,6 +1306,9 @@ function drawHud(inp, extra) {
     last: r.lapTimes[r.lapTimes.length - 1] ?? null,
     best: bestLapFor(r.def.id),
     driftChain: r.driftChain,
+    boostMeter: r.boostMeter,
+    boostMax: CONFIG.boost.max,
+    boosting: r.boosting,
   });
   for (let i = 0; i < r.ai.length; i++) {
     r.minimapDots[i].x = r.ai[i].pos.x;
@@ -1190,8 +1380,26 @@ function tick(now = performance.now()) {
     applySunVisual(sunVisual, lastDef.theme, camera.position, DEFAULT_SUN_VISUAL_DISTANCE);
     skyDome.position.copy(camera.position);
   }
-  renderer.render(scene, camera);
+  updateMotionBlur();
+  composer.render();
   if (perf.on) perfSample(now, raw);
+}
+
+// Retunes the afterimage pass's damp every frame: ramps in with player speed
+// (CONFIG.juice.motionBlur.startFrac..top speed) and jumps to a fixed,
+// slightly stronger value while boosting — off entirely (damp 0) in the
+// menu/no-race state, where nothing's moving and any blur would just look
+// like a rendering bug.
+function updateMotionBlur() {
+  const MB = CONFIG.juice.motionBlur;
+  let damp = 0;
+  if (race) {
+    const speedFrac = race.player.speed / CONFIG.physics.maxSpeed;
+    const t = clamp((speedFrac - MB.startFrac) / (1 - MB.startFrac), 0, 1);
+    damp = t * MB.maxDamp;
+    if (race.boosting) damp = Math.max(damp, MB.boostDamp);
+  }
+  afterimagePass.uniforms["damp"].value = damp;
 }
 
 async function init() {

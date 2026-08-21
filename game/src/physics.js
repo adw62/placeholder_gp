@@ -72,7 +72,11 @@ export class CarPhysics {
     return Math.hypot(this.vel.x, this.vel.z);
   }
 
-  // input: { throttle 0..1, brake 0..1, steer -1..1, handbrake 0..1 }
+  // input: { throttle 0..1, brake 0..1, steer -1..1, handbrake 0..1,
+  //          boost? 0..1 } — boost is optional (AI never sets it): extra
+  // drive force + a raised top-speed ceiling, gated by CONFIG.boost. Applied
+  // here rather than by main.js mutating CONFIG.physics so it can never leak
+  // onto an AI's own CarPhysics instance, which shares the same CONFIG.
   // surface: { grip, drag, power, slope } — from track query (tarmac vs
   // offroad; slope is the road's own tangent Y at the car's position — see
   // main.js's step(), sourced from spline.js's per-sample 3D tangent, whose
@@ -80,6 +84,9 @@ export class CarPhysics {
   // vectors)
   update(dt, input, surface) {
     const P = CONFIG.physics;
+    const boost = clamp(input.boost ?? 0, 0, 1);
+    const B = CONFIG.boost;
+    const maxSpeedEff = P.maxSpeed + B.topSpeedBonus * boost;
     // wheelBase/cgHeight/carRadius are BASE (1x) values — CONFIG.carScale is
     // the single "make the car bigger" knob (see config.js), applied here so
     // the dynamics stay physically consistent with the visual rig size.
@@ -128,7 +135,7 @@ export class CarPhysics {
       if (vLong < -0.3) {
         const d = P.brakeDecel / P.mass;
         aCmd += d; axF += d * P.brakeBias; axR += d * (1 - P.brakeBias);
-      } else if (vLong < P.maxSpeed) {
+      } else if (vLong < maxSpeedEff) {
         // low gearing multiplies torque when slow — enough to break traction
         const launch = 1 + P.launchTorque * Math.max(0, 1 - Math.abs(vLong) / P.launchFade);
         drive = ((P.engineAccel * surface.power) / P.mass) * launch;
@@ -166,6 +173,12 @@ export class CarPhysics {
     aCmd += driveSign * (appF + appR);
     axF += appF; axR += appR;
     this.wheelspin = Math.max(this.spinF, this.spinR);
+
+    // Boost is a rocket-style push, not more wheel torque — added straight to
+    // the commanded accel rather than run through the traction/wheelspin
+    // budget above, so it reliably raises speed instead of mostly turning
+    // into extra wheelspin once the drive axle is already near its limit.
+    if (boost > 0 && vLong < maxSpeedEff) aCmd += B.forceAccel * boost;
 
     let aLong = aCmd;
     aLong -= P.dragK * vLong * Math.abs(vLong);
@@ -240,7 +253,7 @@ export class CarPhysics {
     this.yawRate = clamp(this.yawRate, -P.maxYawRate, P.maxYawRate);
 
     vLong += vLongDot * dt;
-    vLong = clamp(vLong, -P.maxReverse, P.maxSpeed);
+    vLong = clamp(vLong, -P.maxReverse, maxSpeedEff);
     if (!input.throttle && !input.brake && Math.abs(vLong) < 0.15) {
       vLong = 0;
       if (Math.abs(vLat) < 0.2) { vLat = 0; this.yawRate *= 0.8; }

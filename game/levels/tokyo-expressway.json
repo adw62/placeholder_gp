@@ -810,6 +810,46 @@
         "offset": 0,
         "yOffset": 0,
         "conform": false
+      },
+      {
+        "type": "tunnelPortalExpressway",
+        "s": 814.35,
+        "side": "left",
+        "offset": 0,
+        "yOffset": 0,
+        "scaleX": 0.957,
+        "scaleY": 1,
+        "scaleZ": 1
+      },
+      {
+        "type": "tunnelPortalExpressway",
+        "s": 890.27,
+        "side": "left",
+        "offset": 0,
+        "yOffset": 0,
+        "scaleX": 0.957,
+        "scaleY": 1,
+        "scaleZ": 1
+      },
+      {
+        "type": "tunnelPortalExpressway",
+        "s": 1097.3,
+        "side": "left",
+        "offset": 0,
+        "yOffset": 0,
+        "scaleX": 0.957,
+        "scaleY": 1,
+        "scaleZ": 1
+      },
+      {
+        "type": "tunnelPortalExpressway",
+        "s": 1214.63,
+        "side": "left",
+        "offset": 0,
+        "yOffset": 0,
+        "scaleX": 0.957,
+        "scaleY": 1,
+        "scaleZ": 1
       }
     ]
   },
@@ -845,19 +885,19 @@
           -41.54862422400768
         ],
         [
-          97.57917874788946,
+          102.73801363596394,
           16,
-          -61.57705600082798
+          -75.83693138400598
         ],
         [
-          116.40847137682428,
+          127.73632517373899,
           16,
-          -106.28421354613863
+          -118.48924381957855
         ],
         [
-          180.6551431213328,
+          166.93405623957443,
           14,
-          -130.39236000695516
+          -120.80914202137407
         ]
       ],
       "trackObjects": {

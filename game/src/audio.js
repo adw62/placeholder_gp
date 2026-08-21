@@ -268,6 +268,32 @@ export class GameAudio {
     osc.start(t); osc.stop(t + 0.18);
   }
 
+  // One-shot on the rising edge of the boost key (main.js gates repeats —
+  // this fires once per press, not continuously while held). A light gust of
+  // wind, not a rocket ignition: pure filtered noise (no tonal oscillator),
+  // the lowpass swelling open then closing reads as a gust rushing past
+  // rather than a bang — same noise source/timbre family as the wind/skid
+  // loops, just shaped as a one-shot swell instead of a continuous bed.
+  boostStart() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.Q.value = 0.5;
+    lp.frequency.setValueAtTime(450, t);
+    lp.frequency.linearRampToValueAtTime(1700, t + 0.15);
+    lp.frequency.exponentialRampToValueAtTime(400, t + 0.5);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.2, t + 0.08); // light — a gust, not a blast
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    src.connect(lp); lp.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t + 0.52);
+  }
+
   beep(freq, dur = 0.12, vol = 0.25, type = "square", when = 0) {
     if (!this.ctx) return;
     const ctx = this.ctx, t = ctx.currentTime + when;

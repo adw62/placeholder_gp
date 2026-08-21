@@ -197,11 +197,37 @@
   #gearVal { position: absolute; left: 14px; top: 10px; font-size: 26px; font-weight: 700; font-style: italic; color: var(--accent); text-shadow: var(--hard-shadow); }
 
   #driftBox {
-    position: fixed; right: 16px; bottom: 118px; padding: 0;
+    position: fixed; right: 16px; bottom: 158px; padding: 0;
     font-size: 18px; font-weight: 700; font-style: italic; letter-spacing: 0.05em;
     color: var(--accent); text-shadow: var(--hard-shadow);
     font-variant-numeric: tabular-nums;
   }
+
+  @keyframes driftPop {
+    0%   { opacity: 0; transform: translateY(6px) scale(0.7); }
+    15%  { opacity: 1; transform: translateY(-10px) scale(1.15); }
+    30%  { transform: translateY(-14px) scale(1); }
+    75%  { opacity: 1; transform: translateY(-22px) scale(1); }
+    100% { opacity: 0; transform: translateY(-34px) scale(1); }
+  }
+  .driftPop {
+    position: fixed; right: 16px; bottom: 190px;
+    font-size: 22px; font-weight: 900; font-style: italic;
+    color: #ffcc33; text-shadow: var(--hard-shadow);
+    pointer-events: none; animation: driftPop 1.1s ease-out forwards;
+  }
+
+  #boostPanel { right: 16px; bottom: 118px; padding: 6px 16px 8px; min-width: 110px; box-sizing: border-box; }
+  #boostLabel {
+    font-size: 10px; font-weight: 700; font-style: italic; letter-spacing: 0.18em;
+    color: var(--dim); text-align: right; margin-bottom: 3px;
+  }
+  #boostBar { height: 8px; background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.25); }
+  #boostFill { height: 100%; width: 0%; background: linear-gradient(90deg, #2fb8ff, #8be9ff); }
+  #boostPanel.full #boostLabel { color: #ffcc33; }
+  #boostPanel.full #boostFill { background: linear-gradient(90deg, #ffcc33, #fff2a8); box-shadow: 0 0 8px #ffcc33; animation: boostPulse 0.6s ease-in-out infinite; }
+  #boostPanel.active #boostFill { box-shadow: 0 0 10px #6df0ff; }
+  @keyframes boostPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
   #centerMsg {
     position: fixed; left: 50%; top: 34%; transform: translate(-50%, -50%);
@@ -238,6 +264,7 @@
   <div id="trackList"></div>
   <p class="controlsHint">
     <b>W/S</b> throttle &amp; brake &nbsp;&middot;&nbsp; <b>A/D</b> steer &nbsp;&middot;&nbsp; <b>Space</b> handbrake &nbsp;&middot;&nbsp;
+    <b>Shift</b> boost &nbsp;&middot;&nbsp;
     <b>C</b> camera &nbsp;&middot;&nbsp; <b>R</b> reset &nbsp;&middot;&nbsp; <b>Esc</b> pause &nbsp;&middot;&nbsp; <b>M</b> mute
   </p>
 </div>
@@ -259,9 +286,13 @@
     <div id="speedVal">0</div>
     <div id="speedUnit">KM/H</div>
   </div>
+  <div id="boostPanel" class="panel">
+    <div id="boostLabel">BOOST</div>
+    <div id="boostBar"><div id="boostFill"></div></div>
+  </div>
   <div id="driftBox" class="hidden">DRIFT +<span id="driftScore">0</span></div>
   <div id="centerMsg" class="hidden"></div>
-  <div id="hint"><b>W/A/S/D</b> drive &nbsp; <b>Space</b> handbrake &nbsp; <b>R</b> reset &nbsp; <b>C</b> camera &nbsp; drag mouse to orbit</div>
+  <div id="hint"><b>W/A/S/D</b> drive &nbsp; <b>Space</b> handbrake &nbsp; <b>Shift</b> boost &nbsp; <b>R</b> reset &nbsp; <b>C</b> camera &nbsp; drag mouse to orbit</div>
 </div>
 
 <!-- ---------- Results ---------- -->

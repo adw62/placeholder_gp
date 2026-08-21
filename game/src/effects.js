@@ -490,6 +490,32 @@ export class Effects {
     }
   }
 
+  // Boost flame: called every frame a car is boosting (player or AI — main.js
+  // gates whether to call this at all, nothing here checks a "boosting"
+  // flag). x/y/z = emission point at the car's tail; fx/fz = the car's
+  // forward unit vector, so the jet throws backward along -forward
+  // regardless of heading. `key` identifies the caller (defaults to the
+  // player) so simultaneous boosters each get their own spawn-rate
+  // accumulator — sharing one would spawn particles earned by one car's
+  // dt at whichever car's position happened to call in last.
+  boostFlame(dt, x, y, z, fx, fz, key = "player") {
+    this._boostAcc ??= new Map();
+    let acc = (this._boostAcc.get(key) ?? 0) + dt * 70;
+    while (acc > 1) {
+      acc -= 1;
+      const hot = Math.random() < 0.4; // a few brighter near-white cores among the blue
+      this.particles.spawn(x, y, z, {
+        vx: -fx * (3 + Math.random() * 2) + (Math.random() - 0.5) * 0.5,
+        vz: -fz * (3 + Math.random() * 2) + (Math.random() - 0.5) * 0.5,
+        vy: 0.3 + Math.random() * 0.4, spread: 0.3,
+        life: 0.16 + Math.random() * 0.16, size: hot ? 0.16 : 0.24, grow: 0.9,
+        alpha: hot ? 0.9 : 0.5, grav: 0.4,
+        color: hot ? [0.8, 0.95, 1] : [0.32, 0.72, 1],
+      });
+    }
+    this._boostAcc.set(key, acc);
+  }
+
   // Wall or car hit: sparks, paint chips, camera shake.
   // `paint` is an optional 0xRRGGBB for the chip colour — main.js passes the
   // struck AI's own colour; the player has no single paint value to read (its

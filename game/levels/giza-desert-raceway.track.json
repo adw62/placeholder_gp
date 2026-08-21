@@ -1,0 +1,1799 @@
+{
+  "id": "giza-desert-raceway",
+  "name": "Giza Desert Raceway",
+  "desc": "Dunes, pyramids, cobbles and Cairo — a technical desert circuit that plunges into the Corkscrew of Old Town.",
+  "laps": 4,
+  "width": 6,
+  "medalAvgSpeed": {
+    "gold": 8.7,
+    "silver": 7.8,
+    "bronze": 6.8
+  },
+  "theme": {
+    "sky": "0x9fc3dd",
+    "fog": "0xd8c9a8",
+    "fogNear": 60,
+    "fogFar": 300,
+    "ground": "#c9a876",
+    "hill": "0xb8956a",
+    "terrain": "desert",
+    "sun": "0xfff0d0",
+    "sunIntensity": 2.3,
+    "hemiIntensity": 0.9,
+    "sunAzimuthDeg": 110,
+    "sunElevationDeg": 42,
+    "props": {
+      "trees": 0,
+      "rocks": 0,
+      "billboards": 0
+    }
+  },
+  "controlPoints": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      4
+    ],
+    [
+      0,
+      0,
+      8
+    ],
+    [
+      0,
+      0,
+      12
+    ],
+    [
+      0,
+      0,
+      16
+    ],
+    [
+      0.205,
+      0.017,
+      19.135
+    ],
+    [
+      0.818,
+      0.066,
+      22.216
+    ],
+    [
+      1.828,
+      0.145,
+      25.191
+    ],
+    [
+      3.218,
+      0.252,
+      28.009
+    ],
+    [
+      4.963,
+      0.385,
+      30.621
+    ],
+    [
+      7.034,
+      0.541,
+      32.983
+    ],
+    [
+      8.449,
+      0.651,
+      34.397
+    ],
+    [
+      9.863,
+      0.769,
+      35.811
+    ],
+    [
+      11.277,
+      0.895,
+      37.225
+    ],
+    [
+      13.015,
+      1.046,
+      38.684
+    ],
+    [
+      14.98,
+      1.205,
+      39.818
+    ],
+    [
+      17.112,
+      1.371,
+      40.594
+    ],
+    [
+      19.347,
+      1.543,
+      40.988
+    ],
+    [
+      21.616,
+      1.72,
+      40.988
+    ],
+    [
+      24.683,
+      1.969,
+      40.72
+    ],
+    [
+      27.75,
+      2.223,
+      40.452
+    ],
+    [
+      30.817,
+      2.482,
+      40.183
+    ],
+    [
+      33.884,
+      2.743,
+      39.915
+    ],
+    [
+      35.278,
+      2.862,
+      39.988
+    ],
+    [
+      36.599,
+      2.98,
+      40.443
+    ],
+    [
+      37.742,
+      3.098,
+      41.243
+    ],
+    [
+      38.621,
+      3.215,
+      42.329
+    ],
+    [
+      39.167,
+      3.332,
+      43.614
+    ],
+    [
+      39.684,
+      3.497,
+      45.546
+    ],
+    [
+      40.202,
+      3.66,
+      47.477
+    ],
+    [
+      40.72,
+      3.819,
+      49.409
+    ],
+    [
+      41.296,
+      3.954,
+      51.038
+    ],
+    [
+      42.121,
+      4.086,
+      52.557
+    ],
+    [
+      43.173,
+      4.214,
+      53.927
+    ],
+    [
+      44.426,
+      4.339,
+      55.117
+    ],
+    [
+      45.85,
+      4.459,
+      56.095
+    ],
+    [
+      47.293,
+      4.57,
+      56.929
+    ],
+    [
+      48.737,
+      4.677,
+      57.762
+    ],
+    [
+      50.18,
+      4.779,
+      58.595
+    ],
+    [
+      51.881,
+      4.888,
+      59.407
+    ],
+    [
+      53.689,
+      4.989,
+      59.942
+    ],
+    [
+      55.558,
+      5.083,
+      60.188
+    ],
+    [
+      57.442,
+      5.169,
+      60.139
+    ],
+    [
+      59.295,
+      5.246,
+      59.796
+    ],
+    [
+      60.583,
+      5.294,
+      59.45
+    ],
+    [
+      61.871,
+      5.339,
+      59.105
+    ],
+    [
+      63.159,
+      5.378,
+      58.76
+    ],
+    [
+      64.728,
+      5.421,
+      58.045
+    ],
+    [
+      65.979,
+      5.455,
+      56.858
+    ],
+    [
+      66.775,
+      5.48,
+      55.329
+    ],
+    [
+      67.03,
+      5.495,
+      53.623
+    ],
+    [
+      66.716,
+      5.5,
+      51.928
+    ],
+    [
+      66.146,
+      5.492,
+      50.362
+    ],
+    [
+      65.576,
+      5.47,
+      48.795
+    ],
+    [
+      65.006,
+      5.433,
+      47.229
+    ],
+    [
+      64.716,
+      5.385,
+      45.664
+    ],
+    [
+      64.951,
+      5.325,
+      44.09
+    ],
+    [
+      65.70463328745953,
+      5.254,
+      42.69030164602889
+    ],
+    [
+      66.841,
+      5.173,
+      41.582
+    ],
+    [
+      68.289,
+      5.081,
+      40.922
+    ],
+    [
+      71.187,
+      4.884,
+      40.146
+    ],
+    [
+      74.085,
+      4.657,
+      39.369
+    ],
+    [
+      76.982,
+      4.404,
+      38.593
+    ],
+    [
+      79.064,
+      4.202,
+      37.802
+    ],
+    [
+      80.945,
+      3.99,
+      36.609
+    ],
+    [
+      82.547,
+      3.769,
+      35.062
+    ],
+    [
+      83.805,
+      3.542,
+      33.224
+    ],
+    [
+      84.668,
+      3.308,
+      31.171
+    ],
+    [
+      85.837,
+      2.881,
+      27.346
+    ],
+    [
+      87.007,
+      2.451,
+      23.521
+    ],
+    [
+      88.176,
+      2.028,
+      19.695
+    ],
+    [
+      89.346,
+      1.62,
+      15.87
+    ],
+    [
+      89.523,
+      1.558,
+      15.267
+    ],
+    [
+      89.688,
+      1.497,
+      14.661
+    ],
+    [
+      90.663,
+      1.122,
+      10.758
+    ],
+    [
+      91.56,
+      0.81,
+      7.16
+    ],
+    [
+      92.457,
+      0.539,
+      3.561
+    ],
+    [
+      93.354,
+      0.314,
+      -0.038
+    ],
+    [
+      94.252,
+      0.145,
+      -3.636
+    ],
+    [
+      95.149,
+      0.037,
+      -7.235
+    ],
+    [
+      96.046,
+      0,
+      -10.833
+    ],
+    [
+      96.41,
+      0.002,
+      -12.896
+    ],
+    [
+      96.483,
+      0.007,
+      -14.989
+    ],
+    [
+      96.264,
+      0.015,
+      -17.072
+    ],
+    [
+      95.757,
+      0.026,
+      -19.104
+    ],
+    [
+      94.973,
+      0.039,
+      -21.046
+    ],
+    [
+      94.096,
+      0.055,
+      -22.844
+    ],
+    [
+      93.219,
+      0.073,
+      -24.641
+    ],
+    [
+      92.342,
+      0.093,
+      -26.439
+    ],
+    [
+      90.748,
+      0.128,
+      -29.146
+    ],
+    [
+      88.75,
+      0.167,
+      -31.57
+    ],
+    [
+      86.397,
+      0.211,
+      -33.651
+    ],
+    [
+      83.747,
+      0.257,
+      -35.339
+    ],
+    [
+      80.866,
+      0.306,
+      -36.592
+    ],
+    [
+      77.557,
+      0.363,
+      -37.732
+    ],
+    [
+      74.247,
+      0.421,
+      -38.871
+    ],
+    [
+      70.938,
+      0.481,
+      -40.011
+    ],
+    [
+      67.629,
+      0.541,
+      -41.15
+    ],
+    [
+      66.472,
+      0.562,
+      -41.641
+    ],
+    [
+      65.395,
+      0.584,
+      -42.288
+    ],
+    [
+      64.418,
+      0.605,
+      -43.079
+    ],
+    [
+      63.561,
+      0.626,
+      -43.998
+    ],
+    [
+      62.841,
+      0.647,
+      -45.028
+    ],
+    [
+      61.982,
+      0.674,
+      -46.456
+    ],
+    [
+      61.124,
+      0.701,
+      -47.885
+    ],
+    [
+      60.265,
+      0.727,
+      -49.313
+    ],
+    [
+      59.545,
+      0.746,
+      -50.343
+    ],
+    [
+      58.688,
+      0.765,
+      -51.262
+    ],
+    [
+      57.711,
+      0.783,
+      -52.053
+    ],
+    [
+      56.634,
+      0.801,
+      -52.7
+    ],
+    [
+      55.477,
+      0.818,
+      -53.191
+    ],
+    [
+      52.64,
+      0.857,
+      -54.168
+    ],
+    [
+      49.804,
+      0.893,
+      -55.144
+    ],
+    [
+      46.967,
+      0.924,
+      -56.121
+    ],
+    [
+      44.088,
+      0.95,
+      -56.839
+    ],
+    [
+      41.129,
+      0.971,
+      -57.046
+    ],
+    [
+      38.178,
+      0.987,
+      -56.736
+    ],
+    [
+      35.326,
+      0.997,
+      -55.918
+    ],
+    [
+      32.659,
+      1,
+      -54.617
+    ],
+    [
+      29.802,
+      0.99,
+      -52.9
+    ],
+    [
+      26.944,
+      0.962,
+      -51.184
+    ],
+    [
+      24.087,
+      0.918,
+      -49.467
+    ],
+    [
+      22.041,
+      0.876,
+      -48.007
+    ],
+    [
+      20.249,
+      0.828,
+      -46.246
+    ],
+    [
+      18.754,
+      0.775,
+      -44.225
+    ],
+    [
+      17.593,
+      0.718,
+      -41.996
+    ],
+    [
+      16.796,
+      0.657,
+      -39.613
+    ],
+    [
+      15.989,
+      0.574,
+      -36.378
+    ],
+    [
+      15.183,
+      0.491,
+      -33.144
+    ],
+    [
+      14.376,
+      0.409,
+      -29.91
+    ],
+    [
+      14.064,
+      0.386,
+      -29.002
+    ],
+    [
+      13.599,
+      0.364,
+      -28.163
+    ],
+    [
+      12.994,
+      0.342,
+      -27.417
+    ],
+    [
+      12.27,
+      0.321,
+      -26.787
+    ],
+    [
+      11.447,
+      0.3,
+      -26.292
+    ],
+    [
+      9.05,
+      0.246,
+      -25.123
+    ],
+    [
+      6.654,
+      0.198,
+      -23.954
+    ],
+    [
+      4.257,
+      0.159,
+      -22.785
+    ],
+    [
+      2.842,
+      0.139,
+      -21.888
+    ],
+    [
+      1.661,
+      0.122,
+      -20.699
+    ],
+    [
+      0.774,
+      0.11,
+      -19.278
+    ],
+    [
+      0.223,
+      0.103,
+      -17.695
+    ],
+    [
+      0.036,
+      0.1,
+      -16.03
+    ],
+    [
+      0.036,
+      0.084,
+      -12.03
+    ],
+    [
+      0.036,
+      0.05,
+      -8.03
+    ],
+    [
+      0.036,
+      0.016,
+      -4.03
+    ]
+  ],
+  "extraSplines": [
+    {
+      "id": "desertHorizon",
+      "name": "Desert horizon — pyramids",
+      "closed": false,
+      "controlPoints": [
+        [
+          -22.94,
+          0,
+          -59.24
+        ],
+        [
+          -41.62,
+          0,
+          -41.55
+        ],
+        [
+          -44.81,
+          0,
+          -33.36
+        ],
+        [
+          -47.18,
+          0,
+          -15.51
+        ],
+        [
+          -47.97,
+          0,
+          -1.72
+        ],
+        [
+          -47.71,
+          0,
+          12.18
+        ],
+        [
+          -45.89,
+          0,
+          30.18
+        ],
+        [
+          -41.65,
+          0,
+          45.35
+        ],
+        [
+          -30.66,
+          0,
+          62.68
+        ],
+        [
+          -13.52,
+          0,
+          77.93
+        ],
+        [
+          -2.750861042974396,
+          0,
+          82.09904543626281
+        ],
+        [
+          6.27,
+          0,
+          83.38
+        ],
+        [
+          18.38,
+          0,
+          85.3
+        ],
+        [
+          27.83,
+          0,
+          88.63
+        ]
+      ],
+      "trackObjects": {
+        "bands": [
+          {
+            "type": "cutoutPyramid",
+            "side": "right",
+            "from": 0.8925,
+            "to": 0.9575,
+            "spacing": 75,
+            "offset": 100,
+            "jitter": 6,
+            "scaleX": 1.3,
+            "scaleY": 1.3,
+            "rotY": 1.5708
+          },
+          {
+            "type": "cutoutPyramid",
+            "side": "right",
+            "from": 0.4225,
+            "to": 0.5775,
+            "spacing": 95,
+            "offset": 30,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotY": 1.5708
+          }
+        ],
+        "points": []
+      }
+    },
+    {
+      "id": "cairoHorizon",
+      "name": "Old Cairo skyline",
+      "closed": false,
+      "controlPoints": [
+        [
+          84.36841769589863,
+          0,
+          81.16426805054836
+        ],
+        [
+          116.36358225412056,
+          2.75,
+          55.516525251255025
+        ],
+        [
+          136.6588816257859,
+          0,
+          6.805198148829064
+        ],
+        [
+          136.50635084888023,
+          0,
+          -40.716689554127925
+        ],
+        [
+          120.34754763365014,
+          0,
+          -68.68647721651564
+        ],
+        [
+          105.32658417366669,
+          0,
+          -88.50176263804482
+        ],
+        [
+          74.46646481228584,
+          0,
+          -94.37611983833352
+        ],
+        [
+          52.16237367970763,
+          0,
+          -101.19048246790331
+        ],
+        [
+          24.445679825829117,
+          0,
+          -89.60692556561558
+        ],
+        [
+          7.032445150340333,
+          0,
+          -77.75488506464765
+        ],
+        [
+          -19.981924718126617,
+          0,
+          -52.4241774888722
+        ]
+      ],
+      "trackObjects": {
+        "bands": [
+          {
+            "type": "cutoutCairoSkyline",
+            "side": "left",
+            "from": 0,
+            "to": 1,
+            "spacing": 58,
+            "offset": 0,
+            "jitter": 6,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotY": 1.5708
+          },
+          {
+            "type": "cutoutCairoSkyline",
+            "side": "left",
+            "from": 0.1425,
+            "to": 0.8575,
+            "spacing": 80,
+            "offset": -15,
+            "scaleX": 1.6,
+            "scaleY": 1.6,
+            "rotY": 1.5708
+          }
+        ],
+        "points": []
+      }
+    },
+    {
+      "id": "spline-mt37abbt",
+      "name": "Spline 3",
+      "closed": false,
+      "controlPoints": [
+        [
+          33.018002286756285,
+          3.5,
+          51.456401876237635
+        ],
+        [
+          36.518627306760784,
+          4,
+          58.391471574468284
+        ],
+        [
+          47.67831686073363,
+          4,
+          68.0542294903728
+        ]
+      ],
+      "trackObjects": {
+        "bands": [
+          {
+            "type": "marketStall",
+            "side": "both",
+            "from": 0,
+            "to": 1,
+            "spacing": 5,
+            "offset": 0.9,
+            "jitter": 1.8,
+            "conform": true,
+            "scaleX": 0.6,
+            "scaleY": 0.6,
+            "scaleZ": 0.6,
+            "rotX": 0,
+            "rotY": 0,
+            "rotZ": 0,
+            "rows": 2
+          }
+        ],
+        "points": []
+      }
+    },
+    {
+      "id": "spline-mt37c3gj",
+      "name": "Spline 4",
+      "closed": false,
+      "controlPoints": [
+        [
+          57.76619811657058,
+          5.2,
+          44.892539563664464
+        ],
+        [
+          61.08377947562889,
+          5.2,
+          38.08054451434687
+        ],
+        [
+          68.43019477060739,
+          5.2,
+          34.49860613536384
+        ]
+      ],
+      "trackObjects": {
+        "bands": [
+          {
+            "type": "marketStall",
+            "side": "both",
+            "from": 0,
+            "to": 1,
+            "spacing": 3.5,
+            "offset": 0.1,
+            "jitter": 0,
+            "conform": true,
+            "scaleX": 0.6,
+            "scaleY": 0.6,
+            "scaleZ": 0.6,
+            "rotX": 0,
+            "rotY": 0,
+            "rotZ": 0,
+            "yOffset": 0
+          }
+        ],
+        "points": []
+      }
+    },
+    {
+      "id": "spline-mt38h2gq",
+      "name": "Spline 5",
+      "closed": false,
+      "controlPoints": [
+        [
+          51.35056666396722,
+          0,
+          -85.42822787653282
+        ],
+        [
+          28.49867899266854,
+          0,
+          -81.62804015695906
+        ],
+        [
+          6.4361769246919,
+          0,
+          -69.84682108740088
+        ],
+        [
+          -16.37105297370985,
+          0,
+          -46.400255380882
+        ],
+        [
+          -31.45897902640047,
+          0,
+          -23.779738686448916
+        ],
+        [
+          -31.619426540962664,
+          0,
+          7.6176939155702605
+        ]
+      ],
+      "trackObjects": {
+        "bands": [
+          {
+            "type": "buildingOldTown",
+            "side": "left",
+            "from": 0,
+            "to": 1,
+            "spacing": 9,
+            "offset": 0,
+            "jitter": 1.8,
+            "conform": true,
+            "scaleX": 1,
+            "scaleY": 1,
+            "scaleZ": 1,
+            "rotX": 0,
+            "rotY": 0,
+            "rotZ": 0,
+            "rows": 3,
+            "rowSpacing": 6.1
+          }
+        ],
+        "points": []
+      }
+    },
+    {
+      "id": "spline-mt3a1tjr",
+      "name": "Spline 6",
+      "closed": false,
+      "controlPoints": [
+        [
+          90.63,
+          0,
+          -42.7
+        ],
+        [
+          89.12206693380128,
+          0,
+          -57.19332535961452
+        ],
+        [
+          100.64549325304006,
+          0,
+          -66.68310715821661
+        ],
+        [
+          114.36,
+          0,
+          -61.61
+        ]
+      ],
+      "trackObjects": {
+        "bands": [
+          {
+            "type": "rockOutcrop",
+            "side": "right",
+            "from": 0,
+            "to": 1,
+            "spacing": 6.5,
+            "offset": 0,
+            "jitter": 1.8,
+            "conform": true,
+            "scaleX": 1,
+            "scaleY": 1,
+            "scaleZ": 1,
+            "rotX": 0,
+            "rotY": 0,
+            "rotZ": 0,
+            "yOffset": -1.2,
+            "rows": 2,
+            "rowSpacing": 2
+          }
+        ],
+        "points": []
+      }
+    }
+  ],
+  "trackObjects": {
+    "bands": [
+      {
+        "type": "splineTarmac",
+        "tex": "cobble",
+        "side": "left",
+        "from": 0.1858,
+        "to": 0.4214,
+        "scaleX": 6.4,
+        "spacing": 9
+      },
+      {
+        "type": "splineTarmac",
+        "tex": "wear",
+        "side": "left",
+        "from": 0.2159,
+        "to": 0.3634,
+        "scaleX": 3.4,
+        "offset": -1.2,
+        "spacing": 13
+      },
+      {
+        "type": "splineTarmac",
+        "tex": "granitedust",
+        "side": "left",
+        "from": 0.25,
+        "to": 0.3,
+        "scaleX": 1.8,
+        "offset": 2,
+        "spacing": 8
+      },
+      {
+        "type": "splineTarmac",
+        "tex": "cobble",
+        "side": "left",
+        "from": 0.5468,
+        "to": 0.7563,
+        "scaleX": 6.6,
+        "spacing": 10
+      },
+      {
+        "type": "splineTarmac",
+        "tex": "wear",
+        "side": "left",
+        "from": 0.6,
+        "to": 0.7,
+        "scaleX": 4,
+        "offset": 0.5,
+        "spacing": 12
+      },
+      {
+        "type": "splineTarmac",
+        "tex": "wear",
+        "side": "left",
+        "from": 0.7563,
+        "to": 0.8041,
+        "scaleX": 5,
+        "spacing": 10
+      },
+      {
+        "type": "splineBarrier",
+        "tex": "barrierPlain",
+        "side": "both",
+        "from": 0,
+        "to": 0.26,
+        "spacing": 6,
+        "offset": 4.4,
+        "yOffset": -0.1
+      },
+      {
+        "type": "rockOutcrop",
+        "side": "right",
+        "from": 0.125,
+        "to": 0.165,
+        "spacing": 6,
+        "offset": 8,
+        "jitter": 2,
+        "scaleY": 0.75
+      },
+      {
+        "type": "buildingOldTown",
+        "side": "both",
+        "from": 0.1825,
+        "to": 0.4975,
+        "spacing": 5,
+        "offset": 4.2,
+        "conform": false,
+        "jitter": 0.6,
+        "yOffset": -0.7
+      },
+      {
+        "type": "buildingOldTown",
+        "side": "both",
+        "from": 0.2059,
+        "to": 0.4214,
+        "spacing": 8.5,
+        "offset": 9,
+        "conform": false,
+        "jitter": 1,
+        "scaleY": 1.3,
+        "yOffset": -1.7
+      },
+      {
+        "type": "marketStall",
+        "side": "left",
+        "from": 0.6825,
+        "to": 0.8275,
+        "spacing": 8,
+        "offset": 13.2,
+        "jitter": 3.5,
+        "conform": false,
+        "scaleX": 0.6,
+        "scaleY": 0.6,
+        "scaleZ": 0.6,
+        "rows": 6,
+        "rowSpacing": 1.4,
+        "yOffset": -0.2
+      },
+      {
+        "type": "cutoutLamp",
+        "side": "both",
+        "from": 0.1908,
+        "to": 0.4214,
+        "spacing": 15,
+        "offset": 4,
+        "jitter": 1
+      },
+      {
+        "type": "buildingOldTown",
+        "side": "both",
+        "from": 0.4214,
+        "to": 0.44,
+        "spacing": 5,
+        "offset": 3.6,
+        "conform": false
+      },
+      {
+        "type": "splineBarrier",
+        "tex": "barrierPlain",
+        "side": "both",
+        "from": 0.2825,
+        "to": 0.5475,
+        "spacing": 7,
+        "offset": 4.4,
+        "yOffset": -0.1
+      },
+      {
+        "type": "cutoutPalm",
+        "side": "left",
+        "from": 0.495,
+        "to": 0.535,
+        "spacing": 8,
+        "offset": 7,
+        "jitter": 2
+      },
+      {
+        "type": "splineBarrier",
+        "tex": "barrierSandstone",
+        "side": "both",
+        "from": 0.5468,
+        "to": 0.7563,
+        "spacing": 7,
+        "offset": 4.4,
+        "yOffset": -0.1
+      },
+      {
+        "type": "cutoutPalm",
+        "side": "both",
+        "from": 0.55,
+        "to": 0.7563,
+        "spacing": 12,
+        "offset": 7.1,
+        "jitter": 3,
+        "scaleY": 1.1,
+        "yOffset": -1.1
+      },
+      {
+        "type": "marketStall",
+        "side": "right",
+        "from": 0.6675,
+        "to": 0.7425,
+        "spacing": 4,
+        "offset": 15.8,
+        "jitter": 4.2,
+        "conform": false,
+        "yOffset": -0.2,
+        "rows": 4,
+        "rowSpacing": 3.9,
+        "scaleY": 0.6,
+        "scaleX": 0.6,
+        "scaleZ": 0.6
+      },
+      {
+        "type": "cutoutPalm",
+        "side": "both",
+        "from": 0.65,
+        "to": 0.76,
+        "spacing": 19,
+        "offset": 20,
+        "jitter": 5,
+        "scaleX": 1.3,
+        "scaleY": 1.3,
+        "yOffset": -2
+      },
+      {
+        "type": "splineBarrier",
+        "tex": "barrierPlain",
+        "side": "both",
+        "from": 0.7563,
+        "to": 0.9,
+        "spacing": 7,
+        "offset": 4.4,
+        "yOffset": -0.1
+      },
+      {
+        "type": "splineBarrier",
+        "tex": "barrierPlain",
+        "side": "both",
+        "from": 0.9,
+        "to": 1,
+        "spacing": 7,
+        "offset": 4.4,
+        "yOffset": -0.1
+      },
+      {
+        "type": "tireBarrier",
+        "side": "left",
+        "from": 0.9,
+        "to": 0.94,
+        "spacing": 0.5,
+        "offset": 4,
+        "jitter": 1
+      },
+      {
+        "type": "tireBarrier",
+        "side": "left",
+        "from": 0.342,
+        "to": 0.37799999999999995,
+        "spacing": 0.5,
+        "offset": 2.8,
+        "jitter": 0.2
+      },
+      {
+        "type": "rockOutcrop",
+        "side": "right",
+        "from": 0.4875,
+        "to": 0.5525,
+        "spacing": 9,
+        "offset": 8,
+        "jitter": 4.2,
+        "scaleY": 0.8,
+        "yOffset": -1.2,
+        "rows": 2,
+        "rowSpacing": 2.9
+      },
+      {
+        "type": "crowd",
+        "side": "both",
+        "from": 0.68,
+        "to": 1.05,
+        "spacing": 6,
+        "offset": 6.5,
+        "rows": 8,
+        "rowSpacing": 1.3,
+        "jitter": 3.2
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.05,
+        "to": 0.15,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "right",
+        "from": 0.1829,
+        "to": 0.2071,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.2214,
+        "to": 0.2486,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.26,
+        "to": 0.29,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.2986,
+        "to": 0.3271,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "right",
+        "from": 0.3386,
+        "to": 0.3643,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.3871,
+        "to": 0.42,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.5486,
+        "to": 0.5786,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.5914,
+        "to": 0.6343,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "right",
+        "from": 0.67,
+        "to": 0.7086,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.7014,
+        "to": 0.74,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.7543,
+        "to": 0.8,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.83,
+        "to": 0.86,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "right",
+        "from": 0.8829,
+        "to": 0.9157,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "splineApexKerb",
+        "side": "left",
+        "from": 0.9170999999999999,
+        "to": 0.9629000000000001,
+        "offset": 3.3,
+        "spacing": 2.5,
+        "conform": true
+      },
+      {
+        "type": "cutoutChevron",
+        "side": "right",
+        "from": 0.125,
+        "to": 0.155,
+        "spacing": 4.5,
+        "offset": 5.7,
+        "jitter": 0.3,
+        "conform": false,
+        "rotY": 1.5708
+      },
+      {
+        "type": "cutoutChevron",
+        "side": "left",
+        "from": 0.68,
+        "to": 0.7186,
+        "spacing": 4.5,
+        "offset": 5.7,
+        "jitter": 0.3,
+        "conform": false,
+        "rotY": -1.5708
+      },
+      {
+        "type": "cutoutChevron",
+        "side": "right",
+        "from": 0.7714,
+        "to": 0.8143,
+        "spacing": 4.5,
+        "offset": 5.7,
+        "jitter": 0.3,
+        "conform": false,
+        "rotY": 1.5708
+      },
+      {
+        "type": "cutoutChevron",
+        "side": "left",
+        "from": 0.893,
+        "to": 0.908,
+        "spacing": 4.5,
+        "offset": 5.7,
+        "jitter": 0.3,
+        "conform": false,
+        "rotY": -1.5708
+      },
+      {
+        "type": "cutoutChevron",
+        "side": "right",
+        "from": 0.928,
+        "to": 0.954,
+        "spacing": 4.5,
+        "offset": 5.7,
+        "jitter": 0.3,
+        "conform": false,
+        "rotY": 1.5708
+      },
+      {
+        "type": "tireBarrier",
+        "side": "left",
+        "from": 0.184,
+        "to": 0.206,
+        "offset": 2.8,
+        "spacing": 0.5,
+        "jitter": 0.2
+      },
+      {
+        "type": "tireBarrier",
+        "side": "left",
+        "from": 0.885,
+        "to": 0.9,
+        "offset": 4,
+        "spacing": 0.5,
+        "jitter": 1
+      },
+      {
+        "type": "tireBarrier",
+        "side": "right",
+        "from": 0.928,
+        "to": 0.952,
+        "offset": 4,
+        "spacing": 0.5,
+        "jitter": 1
+      },
+      {
+        "type": "cutoutReed",
+        "side": "right",
+        "from": 0.5545,
+        "to": 0.6295,
+        "spacing": 3.3,
+        "offset": 11,
+        "jitter": 1.4,
+        "yOffset": -1.2,
+        "rows": 4,
+        "rowSpacing": 1.5
+      },
+      {
+        "type": "cutoutReed",
+        "side": "right",
+        "from": 0.5595,
+        "to": 0.6245,
+        "spacing": 1.6,
+        "offset": 32,
+        "jitter": 3,
+        "yOffset": -0.9,
+        "rows": 3,
+        "rowSpacing": 2.3
+      },
+      {
+        "type": "cutoutPalm",
+        "side": "right",
+        "from": 0.564,
+        "to": 0.62,
+        "spacing": 8,
+        "offset": 6.8,
+        "jitter": 2,
+        "yOffset": -0.9
+      },
+      {
+        "type": "cutoutPalm",
+        "side": "right",
+        "from": 0.5345,
+        "to": 0.6495,
+        "spacing": 5.5,
+        "offset": 39.3,
+        "jitter": 4,
+        "scaleX": 1.15,
+        "scaleY": 1.15
+      }
+    ],
+    "points": [
+      {
+        "type": "cutoutObelisk",
+        "s": 26,
+        "side": "left",
+        "offset": 8.2,
+        "conform": false
+      },
+      {
+        "type": "cutoutRuinsEgypt",
+        "s": 46.21,
+        "side": "right",
+        "offset": 32.23,
+        "conform": false,
+        "rotY": 1.27,
+        "yOffset": -2.68,
+        "rotX": -3.14,
+        "rotZ": -3.14
+      },
+      {
+        "type": "cutoutRuinsEgypt",
+        "s": 23.39,
+        "side": "right",
+        "offset": 37.84,
+        "conform": false,
+        "rotY": 1.39,
+        "yOffset": -2.18,
+        "rotX": -3.14,
+        "rotZ": -3.14,
+        "scaleX": 0.88,
+        "scaleY": 1,
+        "scaleZ": 2.21
+      },
+      {
+        "type": "cutoutObelisk",
+        "s": 156,
+        "side": "left",
+        "offset": 7.4,
+        "conform": false
+      },
+      {
+        "type": "cutoutObelisk",
+        "s": 235.68,
+        "side": "left",
+        "offset": 15.47,
+        "conform": false,
+        "yOffset": -0.57
+      },
+      {
+        "type": "cutoutCableSpan",
+        "s": 95,
+        "offset": 0
+      },
+      {
+        "type": "cutoutCableSpan",
+        "s": 109,
+        "offset": 0
+      },
+      {
+        "type": "cutoutCableSpan",
+        "s": 122,
+        "offset": 0
+      },
+      {
+        "type": "cutoutCableSpan",
+        "s": 131,
+        "offset": 0
+      },
+      {
+        "type": "cutoutGrandstand",
+        "s": 340,
+        "side": "right",
+        "offset": 13,
+        "rotY": 1.5707963267948966
+      },
+      {
+        "type": "cutoutGrandstand",
+        "s": 6,
+        "side": "right",
+        "offset": 13,
+        "rotY": 1.5707963267948966
+      },
+      {
+        "type": "sphinx",
+        "s": 34.86,
+        "side": "right",
+        "offset": 17.07,
+        "yOffset": 0.01,
+        "conform": false,
+        "rotY": -0.19,
+        "rotX": 3.14,
+        "rotZ": 3.14,
+        "scaleX": 0.76,
+        "scaleY": 1.19,
+        "scaleZ": 1.19
+      },
+      {
+        "type": "ocean",
+        "s": 208.68,
+        "side": "right",
+        "offset": 15.91,
+        "yOffset": -0.84,
+        "conform": false,
+        "scaleX": 0.68,
+        "scaleY": 1,
+        "scaleZ": 19.17,
+        "rotY": 0.08,
+        "pit": true
+      }
+    ]
+  }
+}

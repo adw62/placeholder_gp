@@ -4,6 +4,7 @@
 // =====================================================================
 
 const $ = (id) => document.getElementById(id);
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
 export function fmtTime(ms) {
   if (ms == null || !isFinite(ms)) return "--:--.---";
@@ -46,6 +47,7 @@ export class HUD {
       curLap: $("curLap"), lastLap: $("lastLap"), bestLap: $("bestLap"),
       minimap: $("minimap"), speedVal: $("speedVal"), gearVal: $("gearVal"),
       driftBox: $("driftBox"), driftScore: $("driftScore"),
+      boostPanel: $("boostPanel"), boostFill: $("boostFill"),
       centerMsg: $("centerMsg"), hint: $("hint"),
       results: $("results"), resultTitle: $("resultTitle"), medal: $("medal"),
       resultSub: $("resultSub"), lapTable: $("lapTable"),
@@ -80,6 +82,17 @@ export class HUD {
     // frame-to-frame) skips the innerHTML reparse/DOM-node churn instead of
     // redoing it 60x/sec regardless.
     this._last = {};
+  }
+
+  // Floating "+N DRIFT!" pop near the drift box when a chain ends — CSS
+  // (driftPop keyframes) drives the whole rise/fade, this just spawns and
+  // reaps the element.
+  popDrift(amount) {
+    const el = document.createElement("div");
+    el.className = "driftPop";
+    el.textContent = `+${amount} DRIFT!`;
+    this.el.hud.appendChild(el);
+    setTimeout(() => el.remove(), 1100);
   }
 
   setLoading(show, text) {
@@ -179,6 +192,13 @@ export class HUD {
     const drifting = d.driftChain > 1;
     this.el.driftBox.classList.toggle("hidden", !drifting);
     if (drifting) this.el.driftScore.textContent = Math.round(d.driftChain);
+
+    if (d.boostMax) {
+      const frac = clamp01(d.boostMeter / d.boostMax);
+      this.el.boostFill.style.width = (frac * 100).toFixed(1) + "%";
+      this.el.boostPanel.classList.toggle("full", frac >= 1);
+      this.el.boostPanel.classList.toggle("active", !!d.boosting);
+    }
   }
 
   // ---------- center messages ----------
