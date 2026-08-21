@@ -425,17 +425,17 @@ export async function loadCrowdKitFromUrl(url) {
   return loadCrowdKitFromJSON(await res.json());
 }
 
-// Directory-listing discovery, same trick placeholders.js uses for the
-// barrier ribbon/sprite folders (works with Python's http.server; most
-// static hosts won't return a listing, so this just yields nothing there).
+// manifest.json discovery, same trick placeholders.js uses for the barrier
+// ribbon/sprite folders — a plain static file, so it works on any static
+// host (GitHub Pages included). Regenerate with `node
+// game/tools/build-manifests.mjs` after adding/removing a kit.
 export async function discoverCrowdKitUrls(folderUrl) {
   try {
-    const res = await fetch(folderUrl);
-    if (!res.ok) return [];
-    const html = await res.text();
-    const hrefs = [...html.matchAll(/href="([^"]+\.crowd\.json)"/gi)].map((m) => m[1]);
     const base = new URL(folderUrl, location.href);
-    return [...new Set(hrefs)].map((h) => new URL(h, base).href);
+    const res = await fetch(new URL("manifest.json", base));
+    if (!res.ok) return [];
+    const files = await res.json();
+    return [...new Set(files)].map((f) => new URL(f, base).href);
   } catch {
     return [];
   }

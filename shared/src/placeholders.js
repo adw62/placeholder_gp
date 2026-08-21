@@ -59,9 +59,11 @@ export const ASSETS = {
       scale: 0.9,
     },
     { id: "white7", name: "White #7", url: "assets/models/cars/white7.gltf" },
-    // Green #5 is NOT listed here — it's auto-discovered from
-    // assets/models/cars/ (see discoverCarModels below), same as any other
-    // .gltf/.glb dropped in with no hand-authored entry of its own.
+    // AI-only: still fully loaded/tuned/raced like any other car (AI grids
+    // pick from every entry here via randomCarId(), unfiltered), just
+    // excluded from the player's own pick list — see playerCarModels()
+    // below and `playerSelectable` there.
+    { id: "green5", name: "Green #5", url: "assets/models/cars/green5.gltf", playerSelectable: false },
   ],
   // Drop .glb/.gltf files in assets/models/ and register them here by the
   // prop key they should replace — preloaded once at boot, then cloned per
@@ -78,12 +80,13 @@ export const ASSETS = {
     building: "assets/models/buildings.gltf",
   },
   // Folder auto-discovered at load time for the "Spline Barrier" ribbon's
-  // texture variety (see loadRibbonAtlas below) — relies on the dev server
-  // returning a directory listing (Python's `http.server` does this by
-  // default). Safe to point at even while empty: an empty/missing folder
-  // just yields zero images and falls back to procedural stripe variants.
-  // Drop image files (.png/.jpg/.webp) into assets/textures/barriers/ and
-  // they show up next boot/race — no code edit needed.
+  // texture variety (see loadRibbonAtlas below) via that folder's
+  // manifest.json — works on any static host, GitHub Pages included. Safe
+  // to point at even while empty: an empty/missing folder just yields zero
+  // images and falls back to procedural stripe variants. Drop image files
+  // (.png/.jpg/.webp) into assets/textures/barriers/, regenerate the
+  // manifest (`node game/tools/build-manifests.mjs`), and they show up next
+  // boot/race — no other code edit needed.
   ribbonFolders: {
     barrier: "assets/textures/barriers/",
     // Separate atlas key so a track can opt a splineBarrier band into this
@@ -298,17 +301,17 @@ export function loadGLTF(url) {
   );
 }
 
-// Directory-listing discovery (Python's http.server returns one
-// automatically) — same trick as levels.js/carProfiles.js/crowd.js's
-// discoverCrowdKitUrls, here for assets/models/cars/.
+// manifest.json discovery (a plain static file, so it works on any static
+// host — GitHub Pages included) — same trick as levels.js/carProfiles.js/
+// crowd.js's discoverCrowdKitUrls, here for assets/models/cars/. Regenerate
+// with `node game/tools/build-manifests.mjs` after adding/removing a car.
 async function discoverCarUrls(folderUrl) {
   try {
-    const res = await fetch(folderUrl);
-    if (!res.ok) return [];
-    const html = await res.text();
-    const hrefs = [...html.matchAll(/href="([^"]+\.(?:gltf|glb))"/gi)].map((m) => m[1]);
     const base = new URL(folderUrl, location.href);
-    return [...new Set(hrefs)].map((h) => new URL(h, base).href);
+    const res = await fetch(new URL("manifest.json", base));
+    if (!res.ok) return [];
+    const files = await res.json();
+    return [...new Set(files)].map((f) => new URL(f, base).href);
   } catch {
     return [];
   }
@@ -345,11 +348,23 @@ async function discoverCarModels() {
 }
 
 // Picks a random registered car model's id — used for AI opponents so a
-// grid of them doesn't render as identical clones. Returns null if no car
-// models are registered (buildOpponentCar falls back to the boxy placeholder).
+// grid of them doesn't render as identical clones. Deliberately unfiltered
+// (every ASSETS.carModels entry, including ones with `playerSelectable:
+// false`) — that flag only hides a car from the player's own pick list, an
+// AI grid still races it. Returns null if no car models are registered
+// (buildOpponentCar falls back to the boxy placeholder).
 export function randomCarId() {
   if (!ASSETS.carModels.length) return null;
   return ASSETS.carModels[Math.floor(Math.random() * ASSETS.carModels.length)].id;
+}
+
+// ASSETS.carModels entries the player can pick in the menu — everything
+// except cars marked `playerSelectable: false` (present, tuned, and raced
+// like any other car; just kept out of the player's own list). Auto-
+// discovered cars (discoverCarModels above) never set the flag, so they're
+// player-selectable by default, same as before this existed.
+export function playerCarModels() {
+  return ASSETS.carModels.filter((c) => c.playerSelectable !== false);
 }
 
 const crowdKits = [];
@@ -566,17 +581,20 @@ function loadImage(url) {
   });
 }
 
-// Parses a directory-listing HTML page (what Python's `http.server` returns
-// for a folder URL) for image links. Any host that doesn't return a listing
-// (most static hosts) just yields no matches — callers fall back cleanly.
+// Reads folderUrl's manifest.json (a plain static file listing that
+// folder's image filenames — regenerated by `node
+// game/tools/build-manifests.mjs` after adding/removing a file) and loads
+// each one. Works on any static host, including GitHub Pages, unlike
+// parsing a directory-listing page (only Python's http.server returns one).
+// A folder with no manifest (or one that 404s) just yields no matches —
+// callers fall back cleanly.
 async function discoverFolderImages(folderUrl) {
   try {
-    const res = await fetch(folderUrl);
-    if (!res.ok) return [];
-    const html = await res.text();
-    const hrefs = [...html.matchAll(/href="([^"]+\.(?:png|jpe?g|webp))"/gi)].map((m) => m[1]);
     const base = new URL(folderUrl, location.href);
-    const urls = [...new Set(hrefs)].map((h) => new URL(h, base).href);
+    const res = await fetch(new URL("manifest.json", base));
+    if (!res.ok) return [];
+    const files = await res.json();
+    const urls = [...new Set(files)].map((f) => new URL(f, base).href);
     const imgs = await Promise.all(urls.map(loadImage));
     return imgs.filter(Boolean);
   } catch {
